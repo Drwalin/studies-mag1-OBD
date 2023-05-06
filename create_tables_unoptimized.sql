@@ -1,7 +1,8 @@
 
+-- done
 CREATE TABLE entities (
 	name VARCHAR(64) PRIMARY KEY NOT NULL,
-	type VARCHAR(64) NOT NULL,
+	type VARCHAR(64) NOT NULL -- player, npc, mob, chest, marketplace, boss
 );
 
 CREATE TABLE items (
@@ -29,6 +30,7 @@ CREATE TABLE transaction_entries (
 	from_a char check (from_a in (0,1))
 );
 
+-- done
 CREATE TABLE locations (
 	name VARCHAR(128) NOT NULL PRIMARY KEY,
 	players_limit INT NOT NULL,
@@ -41,5 +43,13 @@ CREATE TABLE entities_entered_location (
 	name VARCHAR(64) NOT NULL, -- references entities.name
 	location VARCHAR(128) NOT NULL, -- references locations.name
 	date_time TIMESTAMP
+);
+
+
+
+
+-- done
+CREATE TABLE entity_types (
+	type VARCHAR(64) PRIMARY KEY NOT NULL -- player, npc, mob, chest, marketplace, boss
 );
 

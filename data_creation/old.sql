@@ -1,4 +1,16 @@
 
+
+
+--- errors:
+SELECT * FROM SYS.USER_ERRORS;
+
+
+
+
+
+
+
+
 CREATE OR REPLACE FUNCTION RandomString(
 		p_Characters IN VARCHAR2,
 		p_length IN NUMBER) RETURN VARCHAR2 IS
