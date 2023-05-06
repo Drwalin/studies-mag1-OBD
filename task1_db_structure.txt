@@ -1,0 +1,45 @@
+
+Table items {
+  id int [pk, increment]
+  name string
+  weight float
+  description string
+  type string // none, consumable, left_hand, head, ...
+  base_price float
+  custom_params json
+}
+
+Table transaction_entries {
+  id int [pk, increment]
+  transaction int [ref: > transactions.id]
+  amount int
+  item int [ref: > items.id]
+  from_a boolean
+}
+
+Table transactions {
+  id int [pk, increment]
+  owner_a int [ref: > entities.name] // if null or points to some ethernal entitity, then it means item creation
+  owner_b int [ref: > entities.name]
+  date_time datetime
+}
+
+Table entities {
+  name string [pk]
+  type Enum // player, npc, mob, chest, marketplace, boss
+}
+
+Table locations {
+  name string [pk, increment]
+  players_limit int
+  max_players_noted_at_once_with_no_lags int
+  max_players_noted_at_once_with_no_lags_date date
+}
+
+Table entities_entered_location {
+  id int [pk, increment]
+  name string [ref: > entities.name]
+  location string [ref: > locations.name]
+  date_time datetime
+}
+
