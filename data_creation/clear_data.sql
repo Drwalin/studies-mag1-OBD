@@ -1,12 +1,12 @@
 
-CREATE OR REPLACE PROCEDURE ClearAllData() IS
+CREATE OR REPLACE PROCEDURE ClearAllData IS
 BEGIN
+	DELETE FROM entities_entered_location;
+	DELETE FROM transaction_entries;
+	DELETE FROM transactions;
 	DELETE FROM entities;
 	DELETE FROM items;
-	DELETE FROM transactions;
-	DELETE FROM transaction_entries;
 	DELETE FROM locations;
-	DELETE FROM entities_entered_location;
 END;
-/
 
+SELECT * FROM SYS.USER_ERRORS;

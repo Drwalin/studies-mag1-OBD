@@ -30,16 +30,23 @@ END;
 
 CREATE OR REPLACE PROCEDURE CreateEntities(
 	entities_count IN NUMBER) IS
+	namee VARCHAR2(64);
+	typee VARCHAR2(64);
+	countt NUMBER;
 BEGIN
 	FOR i in 1..entities_count LOOP
-		INSERT INTO entities VALUES (GenerateRandomEntityName, GetRandomEntityType());
+		namee := GenerateRandomEntityName();
+		INSERT INTO entities
+			SELECT namee, GetRandomEntityType()
+			FROM dual
+			WHERE NOT EXISTS (SELECT * 
+				FROM entities
+				WHERE name = namee);
 	END LOOP;
 END;
 
-BEGIN
-	CreateEntityTypes();
-	CreateEntities(10);
-END;
+
+SELECT * FROM ENTITIES;
 
 SELECT * FROM SYS.USER_ERRORS;
 
