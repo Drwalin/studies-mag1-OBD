@@ -106,35 +106,45 @@ BEGIN
 END;
 
 
-CREATE OR REPLACE PROCEDURE TransferRandomItemBetween(
-		transactionId INT,
-		from_a CHAR) IS
-	fromEntity VARCHAR2(64);
-	toEntity VARCHAR2(64);
-	itemId INT;
-BEGIN
-	IF from_a = 1 THEN
-		SELECT owner_a, owner_b INTO fromEntity, toEntity FROM transactions
-		WHERE id = transactionId;
-	ELSE
-		SELECT owner_b, owner_a INTO fromEntity, toEntity FROM transactions
-		WHERE id = transactionId;
-	END IF;
-	
-	SELECT item INTO itemId FROM temp_item_ownership
-		WHERE name = fromEntity
-		ORDER BY dbms_random.random FETCH FIRST 1 ROWS ONLY;
-	
-	INSERT INTO transaction_entries (transaction, item, from_a) VALUES (
-			transactionId,
-			itemId,
-			from_a
-		);
-	
-	UPDATE temp_item_ownership
-		SET name = toEntity
-		WHERE item = itemId;
-END;
+-- CREATE OR REPLACE PROCEDURE TransferRandomItemBetween(
+-- 		transactionId INT,
+-- 		from_a CHAR) IS
+-- 	fromEntity VARCHAR2(64);
+-- 	toEntity VARCHAR2(64);
+-- 	itemId INT;
+-- BEGIN
+-- 	IF from_a = 1 THEN
+-- 		SELECT owner_a, owner_b INTO fromEntity, toEntity FROM transactions
+-- 		WHERE id = transactionId;
+-- 	ELSE
+-- 		SELECT owner_b, owner_a INTO fromEntity, toEntity FROM transactions
+-- 		WHERE id = transactionId;
+-- 	END IF;
+-- 	
+-- 	SELECT item INTO itemId FROM temp_item_ownership
+-- 		WHERE name = fromEntity
+-- 		ORDER BY dbms_random.random FETCH FIRST 1 ROWS ONLY;
+-- 	
+-- 	INSERT INTO transaction_entries (transaction, item, from_a) VALUES (
+-- 			transactionId,
+-- 			itemId,
+-- 			from_a
+-- 		);
+-- 	
+-- 	UPDATE temp_item_ownership
+-- 		SET name = toEntity
+-- 		WHERE item = itemId;
+-- END;
+
+CREATE GLOBAL TEMPORARY TABLE temp_itmes_from_a (
+	id INT
+) ON COMMIT DELETE ROWS;
+CREATE GLOBAL TEMPORARY TABLE temp_itmes_from_b (
+	id INT
+) ON COMMIT DELETE ROWS;
+
+
+
 
 
 CREATE OR REPLACE PROCEDURE CreateRandomMultiTransaction(
@@ -148,6 +158,9 @@ CREATE OR REPLACE PROCEDURE CreateRandomMultiTransaction(
 	itemsCountFromA INT;
 	itemsCountFromB INT;
 BEGIN
+	DELETE FROM temp_itmes_from_a;
+	DELETE FROM temp_itmes_from_b;
+	
 	SELECT name INTO entityA FROM temp_item_ownership
 		ORDER BY dbms_random.random FETCH FIRST 1 ROWS ONLY;
 	SELECT count(*) INTO itemsInA FROM temp_item_ownership
@@ -161,30 +174,47 @@ BEGIN
 		WHERE name = entityB;
 	itemsCountFromB := round(RandomGaussian(1, itemsInB));
 	
+
+	INSERT INTO temp_itmes_from_a SELECT item FROM temp_item_ownership
+		WHERE name = entityA
+		ORDER BY dbms_random.random FETCH FIRST itemsCountFromA ROWS ONLY;
+		
+	INSERT INTO temp_itmes_from_b  SELECT item FROM temp_item_ownership
+		WHERE name = entityB
+		ORDER BY dbms_random.random FETCH FIRST itemsCountFromB ROWS ONLY;
+		
+		
 	INSERT INTO transactions (stamp, owner_a, owner_b) VALUES (
 			timepoint,
 			entityA,
 			entityB
 		) RETURNING id INTO transactionId;
+		
 	
-	FOR i IN 1..itemsCountFromA LOOP
-		TransferRandomItemBetween(transactionId, 1);
-	END LOOP;
+	INSERT INTO transaction_entries (transaction, from_a, item) (
+		SELECT
+			transactionId,
+			1,
+			id
+		FROM temp_itmes_from_a
+	);
+	UPDATE temp_item_ownership
+		SET name = entityB
+		WHERE item IN (SELECT * FROM temp_itmes_from_a);
 	
-	FOR i IN 1..itemsCountFromB LOOP
-		TransferRandomItemBetween(transactionId, 0);
-	END LOOP;
+	INSERT INTO transaction_entries (transaction, from_a, item) (
+		SELECT
+			transactionId,
+			0,
+			id
+		FROM temp_itmes_from_b
+	);
+	UPDATE temp_item_ownership
+		SET name = entityA
+		WHERE item IN (SELECT * FROM temp_itmes_from_b);
 END;
 
 SELECT * FROM SYS.USER_ERRORS;
-
-
-
-
-
-
-
-
 
 CREATE OR REPLACE PROCEDURE CreateItems(
 		startTime IN TIMESTAMP,
@@ -216,9 +246,5 @@ BEGIN
 END;
 	
 
-
 SELECT * FROM SYS.USER_ERRORS;
-
-
-
 
