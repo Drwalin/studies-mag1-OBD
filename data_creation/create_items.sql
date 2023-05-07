@@ -200,15 +200,15 @@ BEGIN
 	currentTime := startTime;
 	FOR i IN 1..iterations LOOP
 		currentTime := AdvanceTimestamp(currentTime, 0, maxHoursBetweenIterations);
-		FOR j IN 1..newItemsPerIteration LOOP
+		FOR j IN 1..RandomGaussian(1, newItemsPerIteration) LOOP
 			currentTime := AdvanceTimestamp(currentTime, 0, maxHoursBetweenInternalIterations);
 			CreateRandomItemForRandomEntity(currentTime);
 		END LOOP;
-		FOR j IN 1..singleTransactionsPerIteration LOOP
+		FOR j IN 1..RandomGaussian(1, singleTransactionsPerIteration) LOOP
 			currentTime := AdvanceTimestamp(currentTime, 0, maxHoursBetweenInternalIterations);
 			CreateRandomSingleTransaction(currentTime);
 		END LOOP;
-		FOR j IN 1..multiTransactionsPerIteration LOOP
+		FOR j IN 1..RandomGaussian(1, multiTransactionsPerIteration) LOOP
 			currentTime := AdvanceTimestamp(currentTime, 0, maxHoursBetweenInternalIterations);
 			CreateRandomMultiTransaction(currentTime);
 		END LOOP;
