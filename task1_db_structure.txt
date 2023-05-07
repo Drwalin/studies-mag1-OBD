@@ -12,7 +12,7 @@ Table items {
 Table transaction_entries {
   id int [pk, increment]
   transaction int [ref: > transactions.id]
-  amount int
+//  amount int
   item int [ref: > items.id]
   from_a boolean
 }

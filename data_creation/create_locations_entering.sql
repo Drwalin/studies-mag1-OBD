@@ -1,12 +1,4 @@
 
-CREATE OR REPLACE FUNCTION AdvanceTimestamp(
-		currentTime TIMESTAMP,
-		hours_min IN NUMBER,
-		hours_max IN NUMBER) RETURN TIMESTAMP IS
-BEGIN
-	RETURN currentTime + dbms_random.value(hours_min, hours_max) * INTERVAL '1' HOUR;
-END;
-
 
 CREATE OR REPLACE FUNCTION WhereWasEntity(
 		entity_name IN VARCHAR2,
@@ -44,8 +36,7 @@ CREATE OR REPLACE PROCEDURE EnterLocationsForEntity(
 	currentTime TIMESTAMP;
 	location VARCHAR2(128);
 BEGIN
-	currentTime := date_start; -- CAST(date_start AS TIMESTAMP);
-	dbms_output.put_line(date_start);
+	currentTime := date_start;
 	steps := round(dbms_random.value(steps_min, steps_max));
 	
 	SELECT name INTO location FROM locations

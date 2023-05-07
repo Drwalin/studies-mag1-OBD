@@ -1,4 +1,5 @@
 
+
 CREATE OR REPLACE FUNCTION AdvanceTimestamp(
 		entityName IN VARCHAR2,
 		created OUT TIMESTAMP,
@@ -22,7 +23,6 @@ CREATE OR REPLACE TYPE t_strings AS TABLE OF VARCHAR2(1024);
 CREATE OR REPLACE FUNCTION SelectAllEntityNamesInLocationDuringTime(
 		locationn IN VARCHAR2,
 		timepoint IN TIMESTAMP) RETURN t_strings AS
-	stmt CLOB;
 	ret t_strings;
 BEGIN
 	SELECT name BULK COLLECT INTO ret FROM entities_entered_location E1
