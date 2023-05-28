@@ -14,7 +14,7 @@ BEGIN
 		FROM entities_entered_location EL1
 		WHERE EL1.location = loc
 		AND EL1.date_time <= timeEnd
-		AND (SELECT count(*) FROM entities_entered_location EL2
+		AND (SELECT COUNT(*) FROM entities_entered_location EL2
 			WHERE EL2.location <> loc
 			AND EL2.name = EL1.name
 			AND EL2.date_time > EL1.date_time
