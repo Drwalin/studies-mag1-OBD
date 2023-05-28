@@ -22,7 +22,7 @@ BEGIN
 END;
 
 BEGIN
-	CreateEntities(100);
+	CreateEntities(1000);
 END;
 
 BEGIN
@@ -32,8 +32,8 @@ END;
 BEGIN
 	CreateItems(
 		TO_TIMESTAMP('2000-01-01 12:12:12.000', 'YYYY-MM-DD HH24:MI:SS.FF6'),
-		1,
-		500,
+		50,
+		100,
 		0,
 		0,
 		0.1,
@@ -44,10 +44,10 @@ END;
 BEGIN
 	CreateItems(
 		GetDateOfNewestTransaction(),
-		50,
-		10,
-		20,
-		10,
+		100,
+		100,
+		100,
+		100,
 		10.0,
 		1.0
 	);
