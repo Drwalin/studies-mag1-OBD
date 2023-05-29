@@ -1,32 +1,37 @@
-
--- select all items that were in location during given time frame
-
-CREATE OR REPLACE TYPE t_ints AS TABLE OF INT;
-
--- query plan:
-
-
 CREATE OR REPLACE FUNCTION SelectAllItemsInLocationDuring(
-		locationn IN VARCHAR2,
+		loc IN VARCHAR2,
 		timeStart IN TIMESTAMP,
 		timeEnd IN TIMESTAMP
-) RETURN t_ints AS
+) RETURN VARCHAR2 SQL_MACRO AS
 	ret t_ints;
 BEGIN
-	SELECT name BULK COLLECT INTO ret
-		FROM items I1
-		WHERE
-		WHERE E1.location = locationn AND E1.date_time <= timepoint
-		AND
-		(SELECT count(*) FROM entities_entered_location E2
-			WHERE E2.location = locationn
-			AND E2.name = E1.name
-			AND E2.date_time > E1.date_time
-			AND E2.date_time <= timepoint
-		) = 0
-		GROUP BY E1.name;
-	RETURN ret;
+ 	RETURN q'{
+	SELECT DISTINCT item FROM (
+		SELECT item FROM
+			(SELECT DISTINCT E1.item
+				FROM entities_entered_location EL1,
+					SelectAllItemsInLocationInTimepoint(loc, EL1.date_time) E1
+				WHERE EL1.date_time <= timeEnd
+				AND EL1.date_time >= timeStart)
+			UNION ALL (SELECT DISTINCT E1.item
+				FROM transactions T1,
+					SelectAllItemsInLocationInTimepoint(loc, T1.stamp) E1
+				WHERE T1.stamp <= timeEnd
+				AND T1.stamp >= timeStart)
+			UNION ALL (SELECT item FROM
+				SelectAllItemsInLocationInTimepoint(loc, timeStart))
+			UNION ALL (SELECT item FROM
+				SelectAllItemsInLocationInTimepoint(loc, timeEnd))
+		)
+ 	}';
+--	RETURN ret;
 END;
+
+SELECT * FROM SYS.USER_ERRORS;
+
+SELECT * FROM SelectAllItemsInLocationDuring('Alabama',
+		TO_TIMESTAMP('2000-01-01 15:14:12.000', 'YYYY-MM-DD HH24:MI:SS.FF6'),
+		TO_TIMESTAMP('2000-01-15 15:14:12.000', 'YYYY-MM-DD HH24:MI:SS.FF6'));
 
 
 
