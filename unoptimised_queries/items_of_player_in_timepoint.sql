@@ -62,6 +62,24 @@ END;
 
 SELECT * FROM SYS.USER_ERRORS;
 
+SELECT floor(dbms_random.value(0, 10)) FROM DUAL;
+
+SELECT * FROM entities WHERE ROWNUM = 1;
+SELECT * FROM entities WHERE ROWNUM IN (SELECT floor(dbms_random.value(0, (SELECT count(*) FROM entities))) FROM DUAL);
+
+SELECT * FROM entities ORDER BY dbms_random.random FETCH FIRST 1 ROWS ONLY;
+
+SELECT name FROM entities
+OFFSET (SELECT floor(dbms_random.value(0, (SELECT count(*) FROM entities)-1)) FROM DUAL) ROWS
+FETCH FIRST 1 ROWS ONLY;
+
+
+SELECT name FROM (SELECT name, ROWNUM rn FROM entities) WHERE rn = (SELECT floor(dbms_random.value(0, (SELECT count(*) FROM entities)-1)) FROM DUAL);
+
+SELECT floor(dbms_random.value(0, (SELECT count(*) FROM entities)-1)) FROM DUAL;
+SELECT count(*) FROM entities;
+
+
 SELECT item FROM SelectItemsOfPlayerInTimepoint('Jamie',
 	TO_TIMESTAMP('2005-02-02 12:12:12.000', 'YYYY-MM-DD HH24:MI:SS.FF6')) ORDER BY item;
 
