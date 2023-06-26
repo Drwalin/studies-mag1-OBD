@@ -1,3 +1,4 @@
+
 CREATE OR REPLACE FUNCTION TryPerformTransaction(
 		itemsFromA IN t_ints,
 		itemsFromB IN t_ints,

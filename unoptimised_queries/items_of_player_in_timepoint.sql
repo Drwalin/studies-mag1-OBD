@@ -23,19 +23,55 @@ BEGIN
 			AND TE2.item = TE1.item
 			AND T2.stamp <= timepoint
 			AND T2.stamp > T1.stamp
-			AND ((
-				TE1.from_a = 0
-				AND playerName = T1.owner_b
-			) OR (
-				TE1.from_a = 1
-				AND playerName = T1.owner_a
-			))
 		) = 0
 	}';
 END;
 
+CREATE OR REPLACE FUNCTION SelectItemsOfPlayerInTimepointUnoptimisedVery2(
+		playerName IN VARCHAR2,
+		timepoint IN TIMESTAMP
+) RETURN VARCHAR2 SQL_MACRO AS
+BEGIN
+	RETURN q'{
+	SELECT IT.id FROM items IT
+		CROSS JOIN LATERAL
+		(
+			SELECT *
+			FROM SelectItemOwnerInTimepoint(IT.id, timepoint) 
+		) O1
+	WHERE
+		O1.taker = playerName
+	}';
+END;
+
+CREATE OR REPLACE FUNCTION SelectItemsOfPlayerInTimepointUnoptimisedVery(
+		playerName IN VARCHAR2,
+		timepoint IN TIMESTAMP
+) RETURN VARCHAR2 SQL_MACRO AS
+BEGIN
+	RETURN q'{
+	SELECT id FROM items IT
+	WHERE
+		(
+			SELECT taker
+			FROM SelectItemOwnerInTimepoint(IT.id, timepoint) 
+		) = playerName
+	}';
+END;
+
+
 SELECT * FROM SYS.USER_ERRORS;
 
-SELECT * FROM SelectItemsOfPlayerInTimepoint('Jamie',
-	TO_TIMESTAMP('2005-02-02 12:12:12.000', 'YYYY-MM-DD HH24:MI:SS.FF6'));
+SELECT item FROM SelectItemsOfPlayerInTimepoint('Jamie',
+	TO_TIMESTAMP('2005-02-02 12:12:12.000', 'YYYY-MM-DD HH24:MI:SS.FF6')) ORDER BY item;
 
+SELECT id FROM SelectItemsOfPlayerInTimepointUnoptimisedVery('Jamie',
+	TO_TIMESTAMP('2005-02-02 12:12:12.000', 'YYYY-MM-DD HH24:MI:SS.FF6')) ORDER BY id;
+
+SELECT id FROM SelectItemsOfPlayerInTimepointUnoptimisedVery2('Jamie',
+	TO_TIMESTAMP('2005-02-02 12:12:12.000', 'YYYY-MM-DD HH24:MI:SS.FF6')) ORDER BY id;
+
+
+CREATE INDEX index1 ON transactions (stamp);
+ALTER INDEX index1 REBUILD;
+DROP INDEX index1;

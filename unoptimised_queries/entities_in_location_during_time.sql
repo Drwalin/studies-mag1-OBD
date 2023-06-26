@@ -54,5 +54,5 @@ SELECT * FROM SelectAllEntitiesInLocationDuring('Alabama',
 
 SELECT * FROM SelectAllEntitiesInLocationDuringUnoptimised('Alabama',
 		TO_TIMESTAMP('2000-01-01 12:12:12.000', 'YYYY-MM-DD HH24:MI:SS.FF6'),
-		TO_TIMESTAMP('2000-01-15 15:14:12.000', 'YYYY-MM-DD HH24:MI:SS.FF6'));
+		TO_TIMESTAMP('2000-01-15 15:14:12.000', 'YYYY-MM-DD HH24:MI:SS.FF6')) ORDER BY name;
 

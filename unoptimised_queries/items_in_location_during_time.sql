@@ -3,7 +3,6 @@ CREATE OR REPLACE FUNCTION SelectAllItemsInLocationDuring(
 		timeStart IN TIMESTAMP,
 		timeEnd IN TIMESTAMP
 ) RETURN VARCHAR2 SQL_MACRO AS
-	ret t_ints;
 BEGIN
  	RETURN q'{
 	SELECT DISTINCT item FROM (
@@ -24,7 +23,6 @@ BEGIN
 				SelectAllItemsInLocationInTimepoint(loc, timeEnd))
 		)
  	}';
---	RETURN ret;
 END;
 
 SELECT * FROM SYS.USER_ERRORS;
@@ -33,7 +31,10 @@ SELECT * FROM SelectAllItemsInLocationDuring('Alabama',
 		TO_TIMESTAMP('2000-01-01 15:14:12.000', 'YYYY-MM-DD HH24:MI:SS.FF6'),
 		TO_TIMESTAMP('2000-01-15 15:14:12.000', 'YYYY-MM-DD HH24:MI:SS.FF6'));
 
-
+	
+	
+CREATE INDEX index1 ON transactions (stamp);
+DROP INDEX index1;
 
 
 
