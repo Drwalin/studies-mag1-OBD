@@ -7,7 +7,7 @@ BEGIN
 	SELECT UNIQUE I1.item
 		FROM SelectAllEntitiesInLocationInTimepoint(location, timepoint) E1
 			CROSS JOIN LATERAL
-			(SELECT * FROM SelectItemsOfPlayerInTimepoint(E1.name, timepoint)) I1
+			(SELECT * FROM SelectItemsOfPlayerInTimepointOptimised(E1.name, timepoint)) I1
 	}';
 END;
 

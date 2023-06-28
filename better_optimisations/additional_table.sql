@@ -8,26 +8,26 @@ CREATE OR REPLACE VIEW basic_entity_item_receivings AS
 	WHERE T1.id = TE1.transaction;
 
 INSERT INTO entity_item_receivings (stamp, item, owner, transaction, abandonmentTIme)
-		SELECT b1.stamp, b1.item, b1.owner, b1.transaction, b2.stamp
-		FROM basic_entity_item_receivings b1, basic_entity_item_receivings b2
-		WHERE b1.item = b2.item
-		AND b1.stamp < b2.stamp
-		AND (
-				SELECT count(*)
-				FROM basic_entity_item_receivings b3
-				WHERE b3.item = b1.item
-				AND b3.stamp < b2.stamp
-				AND b3.stamp > b1.stamp
-			) = 0
-	UNION
-		SELECT b1.stamp, b1.item, b1.owner, b1.transaction, NULL
-		FROM basic_entity_item_receivings b1
-		WHERE (
-				SELECT count(*)
-				FROM basic_entity_item_receivings b3
-				WHERE b3.item = b1.item
-				AND b3.stamp > b1.stamp
-			) = 0;
+	SELECT b1.stamp, b1.item, b1.owner, b1.transaction, b2.stamp
+	FROM basic_entity_item_receivings b1, basic_entity_item_receivings b2
+	WHERE b1.item = b2.item
+	AND b1.stamp < b2.stamp
+	AND (
+			SELECT count(*)
+			FROM basic_entity_item_receivings b3
+			WHERE b3.item = b1.item
+			AND b3.stamp < b2.stamp
+			AND b3.stamp > b1.stamp
+		) = 0
+UNION
+	SELECT b1.stamp, b1.item, b1.owner, b1.transaction, NULL
+	FROM basic_entity_item_receivings b1
+	WHERE (
+			SELECT count(*)
+			FROM basic_entity_item_receivings b3
+			WHERE b3.item = b1.item
+			AND b3.stamp > b1.stamp
+		) = 0;
 	
 DELETE entity_item_receivings;
 
@@ -66,4 +66,42 @@ SELECT * FROM SYS.USER_ERRORS;
 
 
 
+
+
+
+CREATE TABLE entity_in_location (
+	name VARCHAR(64) NOT NULL, -- references entities.name
+	location VARCHAR(128) NOT NULL, -- references locations.name
+	entered TIMESTAMP,
+	leaved TIMESTAMP,
+	
+	CONSTRAINT location_ref3
+		FOREIGN KEY (location)
+		REFERENCES locations (name),
+	CONSTRAINT entity_ref3
+		FOREIGN KEY (name)
+		REFERENCES entities (name)
+);
+
+INSERT INTO entity_in_location (name, location, entered, leaved)
+	SELECT L1.name, L1.location, L1.date_time, L2.date_time
+	FROM entities_entered_location L1, entities_entered_location L2
+	WHERE L1.name = L2.name
+	AND L1.date_time < L2.date_time
+	AND (
+		SELECT count(*)
+		FROM entities_entered_location L3
+		WHERE L3.name = L1.name
+		AND L3.date_time > L1.date_time
+		AND L3.date_time < L2.date_time
+	) = 0
+UNION
+	SELECT L1.name, L1.location, L1.date_time, NULL
+	FROM entities_entered_location L1
+	WHERE (
+		SELECT count(*)
+		FROM entities_entered_location L3
+		WHERE L3.name = L1.name
+		AND L3.date_time > L1.date_time
+	) = 0;
 

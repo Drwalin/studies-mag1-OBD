@@ -15,7 +15,7 @@ BEGIN
 		AND (SELECT COUNT(*) FROM transaction_entries TE2, transactions T2
 			WHERE TE2.transaction = T2.id
 			AND TE2.item = itemId
-			AND T2.stamp <= timepoint
+			AND T2.stamp < timepoint
 			AND T2.stamp > T1.stamp
 		) = 0}';
 END;

@@ -38,7 +38,7 @@ BEGIN
 				FROM entities_entered_location EL1,
 					SelectAllItemsInLocationInTimepoint(loc, EL1.date_time) E1
 				WHERE EL1.date_time <= timeEnd
-				AND EL1.date_time >= timeStart)
+				AND EL1.date_time >= timeStart)dbea
 			UNION ALL (SELECT DISTINCT E1.item
 				FROM transactions T1,
 					SelectAllItemsInLocationInTimepoint(loc, T1.stamp) E1

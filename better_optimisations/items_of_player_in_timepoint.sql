@@ -5,9 +5,10 @@ CREATE OR REPLACE FUNCTION SelectItemsOfPlayerInTimepointOptimised(
 BEGIN
 	RETURN q'{
 	SELECT * FROM entity_item_receivings
-		WHERE stamp <= timepoint
+		WHERE owner = playerName
+		AND stamp <= timepoint
 		AND (
-			abandonmentTIme >= timepoint
+			abandonmentTIme > timepoint
 			OR abandonmentTIme IS NULL
 		)
 	}';
