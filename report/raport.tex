@@ -1872,34 +1872,155 @@ TABLE ACCESS (FULL)&ENTITY\_ITEM\_RECEIVINGS&ANALYZED&137&2755&121220\\ \hline
 		
 		
 	
-	\subsection{}
+	\subsection{Pobranie wszystkich entity, które dane entity mogło widzieć w
+	danym zakresie czasu}
+	
+		Nie wiedziałem jak można takie zapytanie zrobić wykorzystując
+		bezpośrednio taką strukturę danych, jaka była stworzona na początku -
+		zapytanie to było by bardzo złożone i trudne to sprawdzenia czy działa
+		poprawnie. W tym momencie zrobiłem widok zapytania pokazany na Listingu
+		27. z którego potem
+		została utworzona tabela \texttt{entity\_in\_location}. W poniższym
+		kodzie użyję widoku, który został zastosowany do wypełnienia nowej
+		tabeli.
+		\\
+		Mając nową strukturę, czyli każdy wiersz w widoku mówił o entity które
+		weszło do lokalizacji, oraz o tym kiedy z niej wyszło.
 			
 		\begin{lstlisting}[caption={Wersja niezoptymalizowana},captionpos=b]
+CREATE OR REPLACE FUNCTION SelectAllEntitiesTheEntityCanSeeDuring(
+		entityName IN VARCHAR2,
+		timeStart IN TIMESTAMP,
+		timeEnd IN TIMESTAMP
+) RETURN VARCHAR2 SQL_MACRO AS
+BEGIN
+	RETURN q'{
+	SELECT UNIQUE l2.name FROM view_for_creating_entity_in_location l1,
+		view_for_creating_entity_in_location l2
+	WHERE l1.location = l2.location
+	AND (
+		l1.entered < l2.leaved
+		OR l2.leaved IS NULL)
+	AND (
+		l2.entered < l1.leaved
+		OR l1.leaved IS NULL)
+	
+	AND l1.entered < timeEnd
+	AND (
+		l1.leaved > timeStart
+		OR l1.leaved IS NULL)
+	
+	AND l2.entered < timeEnd
+	AND (
+		l2.leaved > timeStart
+		OR l2.leaved IS NULL)
+	
+	AND l1.name = entityName
+	}';
+END;
 		\end{lstlisting}
+		
+		Różnica pomiędzy niezoptymalizowaną wersją tego zapytnia jest tylko
+		taka, że w niezoptymalizowanej wersji wykorzystany był widok, a w
+		zoptymalizowanej wersji tabela powstała z tegoż samego widoku.
 			
 		\begin{lstlisting}[caption={Wersja zoptymalizowana},captionpos=b]
+CREATE OR REPLACE FUNCTION SelectAllEntitiesTheEntityCanSeeDuringOptimised(
+		entityName IN VARCHAR2,
+		timeStart IN TIMESTAMP,
+		timeEnd IN TIMESTAMP
+) RETURN VARCHAR2 SQL_MACRO AS
+BEGIN
+	RETURN q'{
+	SELECT UNIQUE l2.name FROM entity_in_location l1, entity_in_location l2
+	WHERE l1.location = l2.location
+	AND (
+		l1.entered < l2.leaved
+		OR l2.leaved IS NULL)
+	AND (
+		l2.entered < l1.leaved
+		OR l1.leaved IS NULL)
+	
+	AND l1.entered < timeEnd
+	AND (
+		l1.leaved > timeStart
+		OR l1.leaved IS NULL)
+	
+	AND l2.entered < timeEnd
+	AND (
+		l2.leaved > timeStart
+		OR l2.leaved IS NULL)
+	
+	AND l1.name = entityName
+	}';
+END;
 		\end{lstlisting}
 		
 		Zapytania te zostały wywołane z losowo wybranymi argumentami w ramach
 		wygenerowanych danych. \\
 		
 		\begin{lstlisting}[caption={Wywołanie zapytań}, captionpos=b]
+SELECT * FROM SelectAllEntitiesTheEntityCanSeeDuringOptimised('Santiago',
+		TO_TIMESTAMP('2000-01-01 12:12:12.000', 'YYYY-MM-DD HH24:MI:SS.FF6'),
+		TO_TIMESTAMP('2000-01-15 15:14:12.000', 'YYYY-MM-DD HH24:MI:SS.FF6')) ORDER BY name;
+
+SELECT * FROM SelectAllEntitiesTheEntityCanSeeDuring('Santiago',
+		TO_TIMESTAMP('2000-01-01 12:12:12.000', 'YYYY-MM-DD HH24:MI:SS.FF6'),
+		TO_TIMESTAMP('2000-01-15 15:14:12.000', 'YYYY-MM-DD HH24:MI:SS.FF6')) ORDER BY name;
 		\end{lstlisting}
+		
+		Poniżej znajduje się porównanie kosztów zapytań.
 		
 		\begin{tabularx}{\textwidth}{|X|X|X|X|X|}
 			\hline
 			wersja & koszt & koszt io & CPU cost & przyspieszenie \\
 			\hline
-			niezoptymalizowana &  &  &  &  \\
+			niezoptymalizowana & 692 & 680 & 175,355,044 & 1.0 \\
 			\hline
-			zoptymalizowana &  &  &  &  \\
+			zoptymalizowana & 138 & 136 & 27,382,000 & 6.4 \\
 			\hline
 		\end{tabularx}
 		
-		\begin{tabularx}{\textwidth}{|X|X|X|X|X|X|}
-		\end{tabularx}
+		Poniżej znajduje się plan niezoptymalizowanego zapytania \\
 		
 		\begin{tabularx}{\textwidth}{|X|X|X|X|X|X|}
+Operation&Object&Optimizer&Cost&Cardinality&Bytes\\ \hline
+SELECT STATEMENT& - &ALL\_ROWS&692&2&68\\ \hline
+SORT (ORDER BY)& - &[NULL]&692&2&68\\ \hline
+VIEW& - &[NULL]&692&2&68\\ \hline
+HASH (UNIQUE)& - &[NULL]&692&2&436\\ \hline
+HASH JOIN& - &[NULL]&691&2&436\\ \hline
+VIEW&VIEW\_ENTITY\_IN\_LOCATION&[NULL]&345&42&3864\\ \hline
+HASH (UNIQUE)& - &[NULL]&345&42&4110\\ \hline
+UNION-ALL& - &[NULL]&342&0&0\\ \hline
+HASH JOIN (ANTI)& - &[NULL]&205&39&3900\\ \hline
+HASH JOIN& - &[NULL]&137&39&2730\\ \hline
+TABLE ACCESS (FULL)&ENTITIES\_ENTERED\_LOCATION&ANALYZED&68&17&510\\ \hline
+HASH JOIN (ANTI)& - &[NULL]&137&3&210\\ \hline
+TABLE ACCESS (FULL)&ENTITIES\_ENTERED\_LOCATION&ANALYZED&68&3&120\\ \hline
+TABLE ACCESS (FULL)&ENTITIES\_ENTERED\_LOCATION&ANALYZED&68&17&510\\ \hline
+VIEW&VIEW\_ENTITY\_IN\_LOCATION&[NULL]&346&411&51786\\ \hline
+HASH (UNIQUE)& - &[NULL]&346&411&40350\\ \hline
+UNION-ALL& - &[NULL]&343&0&0\\ \hline
+HASH JOIN (RIGHT ANTI)& - &[NULL]&206&386&38600\\ \hline
+TABLE ACCESS (FULL)&ENTITIES\_ENTERED\_LOCATION&ANALYZED&68&16456&493680\\ \hline
+HASH JOIN& - &[NULL]&137&38628&2703960\\ \hline
+HASH JOIN (ANTI)& - &[NULL]&137&25&1750\\ \hline
+TABLE ACCESS (FULL)&ENTITIES\_ENTERED\_LOCATION&ANALYZED&68&2542&101680\\ \hline
+TABLE ACCESS (FULL)&ENTITIES\_ENTERED\_LOCATION&ANALYZED&68&16456&493680\\ \hline
+		\end{tabularx}
+		
+		Poniżej znajduje się plan zoptymalizowanego zapytania \\
+		
+		\begin{tabularx}{\textwidth}{|X|X|X|X|X|X|}
+Operation&Object&Optimizer&Cost&Cardinality&Bytes\\ \hline
+SELECT STATEMENT& - &ALL\_ROWS&138&20&680\\ \hline
+SORT (ORDER BY)& - &[NULL]&138&20&680\\ \hline
+VIEW& - &[NULL]&138&20&680\\ \hline
+HASH (UNIQUE)& - &[NULL]&138&20&1960\\ \hline
+HASH JOIN& - &[NULL]&137&20&1960\\ \hline
+TABLE ACCESS (FULL)&ENTITY\_IN\_LOCATION&ANALYZED&68&2&98\\ \hline
+TABLE ACCESS (FULL)&ENTITY\_IN\_LOCATION&ANALYZED&68&2388&117012\\ \hline
 		\end{tabularx}
 		
 
@@ -1914,7 +2035,14 @@ TABLE ACCESS (FULL)&ENTITY\_ITEM\_RECEIVINGS&ANALYZED&137&2755&121220\\ \hline
 		
 		
 	
-	\subsection{}
+	\subsection{Pobranie wszystkich przedmiotów, które dane entity mogło widzieć
+	w danym zakresie czasu, czyli tych, które inne entity posiadały w tym samym
+	momencie kiedy wybrane entity znajdowało się w wybranej lokalizacji}
+	
+		Tak samo jak w przypadku poprzedniego zapytania, wykorzystany został
+		widok utworzony na potrzeby poprzedniego zapytania, oraz kolejny,
+		dotyczący własności przedmiotu przez entity w zakresie czasu pokazane na
+		Listingu 25.
 			
 		\begin{lstlisting}[caption={Wersja niezoptymalizowana},captionpos=b]
 		\end{lstlisting}
@@ -1928,6 +2056,8 @@ TABLE ACCESS (FULL)&ENTITY\_ITEM\_RECEIVINGS&ANALYZED&137&2755&121220\\ \hline
 		\begin{lstlisting}[caption={Wywołanie zapytań}, captionpos=b]
 		\end{lstlisting}
 		
+		Poniżej znajduje się porównanie kosztów zapytań.
+		
 		\begin{tabularx}{\textwidth}{|X|X|X|X|X|}
 			\hline
 			wersja & koszt & koszt io & CPU cost & przyspieszenie \\
@@ -1938,8 +2068,12 @@ TABLE ACCESS (FULL)&ENTITY\_ITEM\_RECEIVINGS&ANALYZED&137&2755&121220\\ \hline
 			\hline
 		\end{tabularx}
 		
+		Poniżej znajduje się plan niezoptymalizowanego zapytania \\
+		
 		\begin{tabularx}{\textwidth}{|X|X|X|X|X|X|}
 		\end{tabularx}
+		
+		Poniżej znajduje się plan zoptymalizowanego zapytania \\
 		
 		\begin{tabularx}{\textwidth}{|X|X|X|X|X|X|}
 		\end{tabularx}
