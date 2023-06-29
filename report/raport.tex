@@ -2043,17 +2043,160 @@ TABLE ACCESS (FULL)&ENTITY\_IN\_LOCATION&ANALYZED&68&2388&117012\\ \hline
 		widok utworzony na potrzeby poprzedniego zapytania, oraz kolejny,
 		dotyczący własności przedmiotu przez entity w zakresie czasu pokazane na
 		Listingu 25.
+		\\
+		Zapytanie to, jest jeszcze trudniejsze od poprzedniego, ponieważ zawiera
+		w sobie to samo co poprzednie zapytanie, ale również potrzebuje
+		dodatkowych informacji o własności przedmiotu przez entity w danym
+		momencie.
 			
 		\begin{lstlisting}[caption={Wersja niezoptymalizowana},captionpos=b]
+CREATE OR REPLACE FUNCTION SelectAllItemsTheEntityCanSeeDuring(
+		entityName IN VARCHAR2,
+		timeStart IN TIMESTAMP,
+		timeEnd IN TIMESTAMP
+) RETURN VARCHAR2 SQL_MACRO AS
+BEGIN
+	RETURN q'{
+	SELECT UNIQUE item
+	FROM (
+		SELECT item
+		FROM view_entity_in_location l1,
+			view_entity_in_location l2,
+			view_item_ownership_duration i1
+		WHERE l1.location = l2.location
+		AND (
+			l1.entered < l2.leaved
+			OR l2.leaved IS NULL)
+		AND (
+			l2.entered < l1.leaved
+			OR l1.leaved IS NULL)
+		
+		AND l1.entered < timeEnd
+		AND (
+			l1.leaved > timeStart
+			OR l1.leaved IS NULL)
+		
+		AND l2.entered < timeEnd
+		AND (
+			l2.leaved > timeStart
+			OR l2.leaved IS NULL)
+		
+		AND l1.name = entityName
+		
+		
+		AND i1.owner = l2.name
+		
+		AND (
+			l1.entered < i1.time2
+			OR i1.time2 IS NULL)
+		AND (
+			i1.time1 < l1.leaved
+			OR l1.leaved IS NULL)
+		
+		AND (
+			l2.entered < i1.time2
+			OR i1.time2 IS NULL)
+		AND (
+			i1.time1 < l2.leaved
+			OR l2.leaved IS NULL)
+		
+		AND i1.time1 < timeEnd
+		AND (
+			i1.time2 > timeStart
+			OR i1.time2 IS NULL)
+	) UNION (
+		SELECT item FROM view_item_ownership_duration i1
+		WHERE i1.owner = entityName
+		AND i1.time1 < timeEnd
+		AND (
+			i1.time2 > timeStart
+			OR i1.time2 IS NULL)
+	)
+	}';
+END;
 		\end{lstlisting}
+		
+		Tak samo, zoptymalizowane zapytanie wykorzystuje tabele wygenerowaną na
+		podstawie utworzonego widoku.
 			
 		\begin{lstlisting}[caption={Wersja zoptymalizowana},captionpos=b]
+CREATE OR REPLACE FUNCTION SelectAllItemsTheEntityCanSeeDuringOptimised(
+		entityName IN VARCHAR2,
+		timeStart IN TIMESTAMP,
+		timeEnd IN TIMESTAMP
+) RETURN VARCHAR2 SQL_MACRO AS
+BEGIN
+	RETURN q'{
+	SELECT UNIQUE item
+	FROM (
+		SELECT item
+		FROM entity_in_location l1,
+			entity_in_location l2,
+			entity_item_receivings i1
+		WHERE l1.location = l2.location
+		AND (
+			l1.entered < l2.leaved
+			OR l2.leaved IS NULL)
+		AND (
+			l2.entered < l1.leaved
+			OR l1.leaved IS NULL)
+		
+		AND l1.entered < timeEnd
+		AND (
+			l1.leaved > timeStart
+			OR l1.leaved IS NULL)
+		
+		AND l2.entered < timeEnd
+		AND (
+			l2.leaved > timeStart
+			OR l2.leaved IS NULL)
+		
+		AND l1.name = entityName
+		
+		
+		AND i1.owner = l2.name
+		
+		AND (
+			l1.entered < i1.abandonmentTIme
+			OR i1.abandonmentTIme IS NULL)
+		AND (
+			i1.stamp < l1.leaved
+			OR l1.leaved IS NULL)
+		
+		AND (
+			l2.entered < i1.abandonmentTIme
+			OR i1.abandonmentTIme IS NULL)
+		AND (
+			i1.stamp < l2.leaved
+			OR l2.leaved IS NULL)
+		
+		AND i1.stamp < timeEnd
+		AND (
+			i1.abandonmentTIme > timeStart
+			OR i1.abandonmentTIme IS NULL)
+	) UNION (
+		SELECT item FROM entity_item_receivings i1
+		WHERE i1.owner = entityName
+		AND i1.stamp < timeEnd
+		AND (
+			i1.abandonmentTIme > timeStart
+			OR i1.abandonmentTIme IS NULL)
+	)
+	}';
+END;
 		\end{lstlisting}
 		
 		Zapytania te zostały wywołane z losowo wybranymi argumentami w ramach
 		wygenerowanych danych. \\
 		
 		\begin{lstlisting}[caption={Wywołanie zapytań}, captionpos=b]
+SELECT * FROM SelectAllItemsTheEntityCanSeeDuringOptimised('Santiago',
+		TO_TIMESTAMP('2000-01-01 12:12:12.000', 'YYYY-MM-DD HH24:MI:SS.FF6'),
+		TO_TIMESTAMP('2000-01-15 15:14:12.000', 'YYYY-MM-DD HH24:MI:SS.FF6')) ORDER BY item;
+
+SELECT * FROM SelectAllItemsTheEntityCanSeeDuring('Santiago',
+		TO_TIMESTAMP('2000-01-01 12:12:12.000', 'YYYY-MM-DD HH24:MI:SS.FF6'),
+		TO_TIMESTAMP('2000-01-15 15:14:12.000', 'YYYY-MM-DD HH24:MI:SS.FF6')) ORDER BY item;
 		\end{lstlisting}
 		
 		Poniżej znajduje się porównanie kosztów zapytań.
@@ -2062,24 +2205,91 @@ TABLE ACCESS (FULL)&ENTITY\_IN\_LOCATION&ANALYZED&68&2388&117012\\ \hline
 			\hline
 			wersja & koszt & koszt io & CPU cost & przyspieszenie \\
 			\hline
-			niezoptymalizowana &  &  &  &  \\
+			niezoptymalizowana & 2,079 & 2040 & 555,356,526 & 1.0 \\
 			\hline
-			zoptymalizowana &  &  &  &  \\
+			zoptymalizowana & 313 & 307 & 89,899,315 & 6.18 \\
 			\hline
 		\end{tabularx}
 		
 		Poniżej znajduje się plan niezoptymalizowanego zapytania \\
 		
 		\begin{tabularx}{\textwidth}{|X|X|X|X|X|X|}
+Operation&Object&Optimizer&Cost&Cardinality&Bytes\\ \hline
+SELECT STATEMENT& - &ALL\_ROWS&2079&7&91\\ \hline
+SORT (ORDER BY)& - &[NULL]&2079&7&91\\ \hline
+VIEW& - &[NULL]&2078&7&91\\ \hline
+HASH (UNIQUE)& - &[NULL]&2078&7&369\\ \hline
+UNION-ALL& - &[NULL]&2075&0&0\\ \hline
+HASH JOIN& - &[NULL]&1384&1&291\\ \hline
+HASH JOIN& - &[NULL]&691&2&436\\ \hline
+VIEW&VIEW\_ENTITY\_IN\_LOCATION&[NULL]&345&42&3864\\ \hline
+HASH (UNIQUE)& - &[NULL]&345&42&4110\\ \hline
+UNION-ALL& - &[NULL]&342&0&0\\ \hline
+VIEW&VIEW\_ENTITY\_IN\_LOCATION&[NULL]&346&411&51786\\ \hline
+HASH (UNIQUE)& - &[NULL]&346&411&40350\\ \hline
+UNION-ALL& - &[NULL]&343&0&0\\ \hline
+VIEW&VIEW\_ITEM\_OWNERSHIP\_DURATION&[NULL]&693&544&39712\\ \hline
+HASH (UNIQUE)& - &[NULL]&693&544&56333\\ \hline
+UNION-ALL& - &[NULL]&690&0&0\\ \hline
+HASH JOIN (RIGHT ANTI)& - &[NULL]&414&469&50183\\ \hline
+HASH JOIN (ANTI)& - &[NULL]&276&75&6150\\ \hline
+VIEW&VIEW\_ITEM\_OWNERSHIP\_DURATION&[NULL]&691&6&78\\ \hline
+HASH (UNIQUE)& - &[NULL]&691&6&617\\ \hline
+UNION-ALL& - &[NULL]&689&0&0\\ \hline
+HASH JOIN (ANTI)& - &[NULL]&413&5&535\\ \hline
+HASH JOIN& - &[NULL]&275&469&37989\\ \hline
+VIEW&VW\_SQ\_3&[NULL]&138&48646&1264796\\ \hline
+HASH JOIN (ANTI)& - &[NULL]&276&1&82\\ \hline
+HASH JOIN& - &[NULL]&138&75&4200\\ \hline
+VIEW&VW\_SQ\_4&[NULL]&138&48646&1264796\\ \hline
 		\end{tabularx}
 		
 		Poniżej znajduje się plan zoptymalizowanego zapytania \\
 		
 		\begin{tabularx}{\textwidth}{|X|X|X|X|X|X|}
+Operation&Object&Optimizer&Cost&Cardinality&Bytes\\ \hline
+SELECT STATEMENT& - &ALL\_ROWS&313&36&468\\ \hline
+SORT (ORDER BY)& - &[NULL]&313&36&468\\ \hline
+VIEW& - &[NULL]&312&36&468\\ \hline
+HASH (UNIQUE)& - &[NULL]&312&36&4818\\ \hline
+UNION-ALL& - &[NULL]&309&0&0\\ \hline
+HASH JOIN& - &[NULL]&274&33&4686\\ \hline
+HASH JOIN& - &[NULL]&137&20&1960\\ \hline
+TABLE ACCESS (FULL)&ENTITY\_IN\_LOCATION&ANALYZED&68&2&98\\ \hline
+TABLE ACCESS (FULL)&ENTITY\_IN\_LOCATION&ANALYZED&68&2388&117012\\ \hline
+TABLE ACCESS (FULL)&ENTITY\_ITEM\_RECEIVINGS&ANALYZED&137&2755&121220\\ \hline
+TABLE ACCESS (BY INDEX ROWID BATCHED)&ENTITY\_ITEM\_RECEIVINGS&ANALYZED&35&3&132\\ \hline
+INDEX (RANGE SCAN)&PRIMARY\_KEY&ANALYZED&32&3&0\\ \hline
 		\end{tabularx}
 		
 
-		
+\section{Podsumowanie}
+	Udało się wykonać optymalizacje na początkowej bazie danych. Zoptymalizowane
+	wersje zapytań zdają się mieć taką samą złożoność, co liczba wymiarów danych
+	na których pracują, czyli możliwa najmniejsza. Nie oznacza to, że nie dało
+	by się bardziej ich zoptymalizować.
+	Po optymalizacji, zapytania wykonywały się wielokrotnie szybciej niż przed.
+	\\
+	Można się też odnieść do generowania danych. Ponieważ niniejszy projekt nie
+	skupiał się na procesie dodawania nowych transakcji, entity, przedmiotów i
+	poruszania się entity w kontekście optymalizacji. Baza danych przed
+	optymalizacją interakcja z nią powinna wyglądać na dodawaniu nowego wpisu do
+	odpowiednich kolumn, pod warunkiem, że żądana przedmioty żądanej transakcji
+	są własnością entity, które zostały wskazane w tranzakcji, a w przeciwnym
+	razie tranzakcja powinna się nie powieść - nie zostać wpisana do bazy
+	danych. Wykonana optymalizacja nie wprowadza wiele trudności, ponieważ w
+	ramach wykonania transakcji należy tylko dodać jeden lub dwa wpisy do innych
+	tabel, co nie powinno być dużym obciążeniem bazy danych.
+	
+	\paragraph
+	Dużym wyzwaniem okazało się pisanie makr sql. W pewnym momencie pokazał się
+	nieopisany błąd podczas wykonywania makr, który nie informował o błędzie w
+	kodzie makra, ani o błędnych danych. Pokazywało się \texttt{'cannot read
+	data from socket'} w momencie uruchamiania jednego zapytania. Ten sam błąd
+	pokazywał się identycznie w obu wykorzystywanych przezemnie środowiskach -
+	DBeaver i Oracle SQLDeveloper. Nie był to błąd z połączeniem, ani z
+	klientem, ponieważ zarówno przed jak i po uruchomieniu tego felernego
+	zapytania wszystkie inne zapytania wykonywały się poprawnie.
 		
 		
 		
