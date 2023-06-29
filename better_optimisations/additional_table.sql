@@ -7,8 +7,8 @@ CREATE OR REPLACE VIEW basic_entity_item_receivings AS
 	FROM transaction_entries TE1, transactions T1
 	WHERE T1.id = TE1.transaction;
 
-INSERT INTO entity_item_receivings (stamp, item, owner, transaction, abandonmentTIme)
-	SELECT b1.stamp, b1.item, b1.owner, b1.transaction, b2.stamp
+CREATE OR REPLACE VIEW view_for_creating_entity_item_receive AS
+	SELECT b1.stamp stamp, b1.item item, b1.owner owner, b1.transaction transaction, b2.stamp abandonmentTIme
 	FROM basic_entity_item_receivings b1, basic_entity_item_receivings b2
 	WHERE b1.item = b2.item
 	AND b1.stamp < b2.stamp
@@ -28,6 +28,10 @@ UNION
 			WHERE b3.item = b1.item
 			AND b3.stamp > b1.stamp
 		) = 0;
+	
+INSERT INTO entity_item_receivings (stamp, item, owner, transaction, abandonmentTIme)
+	SELECT stamp, item, owner, transaction, abandonmentTIme
+	FROM view_for_creating_entity_item_receive;
 	
 DELETE entity_item_receivings;
 
@@ -83,8 +87,10 @@ CREATE TABLE entity_in_location (
 		REFERENCES entities (name)
 );
 
-INSERT INTO entity_in_location (name, location, entered, leaved)
-	SELECT L1.name, L1.location, L1.date_time, L2.date_time
+DELETE entity_in_location;
+
+CREATE OR REPLACE VIEW view_for_creating_entity_in_location AS
+	SELECT L1.name name, L1.location location, L1.date_time entered, L2.date_time leaved
 	FROM entities_entered_location L1, entities_entered_location L2
 	WHERE L1.name = L2.name
 	AND L1.date_time < L2.date_time
@@ -105,3 +111,6 @@ UNION
 		AND L3.date_time > L1.date_time
 	) = 0;
 
+INSERT INTO entity_in_location (name, location, entered, leaved)
+	SELECT name, location, entered, leaved
+	FROM view_for_creating_entity_in_location;
