@@ -1324,6 +1324,8 @@ SELECT id FROM SelectItemsOfPlayerInTimepointUnoptimisedVery2('Jamie',
 	TO_TIMESTAMP('2005-02-02 12:12:12.000', 'YYYY-MM-DD HH24:MI:SS.FF6')) ORDER BY id;
 		\end{lstlisting}
 		
+		Poniżej znajduje się ogólne porównanie wydajności zapytań \\
+		
 		\begin{tabularx}{\textwidth}{|X|X|X|X|X|}
 			\hline
 			wersja & koszt & koszt io & CPU cost & przyspieszenie \\
@@ -1332,11 +1334,11 @@ SELECT id FROM SelectItemsOfPlayerInTimepointUnoptimisedVery2('Jamie',
 			0.00111 \\
 			\hline
 			druga niezoptymalizowana & 840,734 & 830,237 & 150,898,972,255 &
-			0.00057 \
+			0.00057 \\
 			\hline
-			trochę zoptymalizowana & 278 & 272 & 86,239,666 & 1.0 \
+			trochę zoptymalizowana & 278 & 272 & 86,239,666 & 1.0 \\
 			\hline
-			zoptymalizowana & 138 & 136 & 31,661,431 & 2.723 \
+			zoptymalizowana & 138 & 136 & 31,661,431 & 2.723 \\
 			\hline
 		\end{tabularx}
 		
@@ -1428,33 +1430,191 @@ TABLE ACCESS (FULL)&ENTITY\_ITEM\_RECEIVINGS&ANALYZED&137&8&352\\ \hline
 	
 	\subsection{Pobranie przedmiotów, które w podanym momencie znajdowały się w
 	podanej lokalizacji}
+	
+		Wersja niezoptymalizowana wykorzystuje istniejące już funkcje
 			
 		\begin{lstlisting}[caption={Wersja niezoptymalizowana},captionpos=b]
+CREATE OR REPLACE FUNCTION SelectAllItemsInLocationInTimepoint(
+		location IN VARCHAR2,
+		timepoint IN TIMESTAMP
+) RETURN VARCHAR2 SQL_MACRO AS
+BEGIN
+	RETURN q'{
+	SELECT UNIQUE I1.item
+		FROM SelectAllEntitiesInLocationInTimepoint(location, timepoint) E1
+			CROSS JOIN LATERAL
+			(SELECT * FROM SelectItemsOfPlayerInTimepoint(E1.name, timepoint)) I1
+	}';
+END;
+		\end{lstlisting}
+		
+		Zerowa wersja zoptymalizowana, jest prawie identyczna jak
+		niezoptymalizowana tylko wykorzystuje INNER JOIN zamiast CROSS JOIN
+		LATERAL, oraz wykorzystuje zoptymalizowane istniejące funkcje.
+		
+		\begin{lstlisting}[caption={Zerowa wersja zoptymalizowana},captionpos=b]
+CREATE OR REPLACE FUNCTION SelectAllItemsInLocationInTimepointOptimised0(
+		location IN VARCHAR2,
+		timepoint IN TIMESTAMP
+) RETURN VARCHAR2 SQL_MACRO AS
+BEGIN
+	RETURN q'{
+	SELECT I1.item
+		FROM SelectAllEntitiesInLocationInTimepointOptimised(location, timepoint) E1,
+			SelectItemsOfPlayerInTimepointOptimised(E1.name, timepoint) I1
+	}';
+END;
 		\end{lstlisting}
 			
-		\begin{lstlisting}[caption={Wersja zoptymalizowana},captionpos=b]
+		Pierwsza wersja zoptymalizowana, jest identyczna jak zerowa, tylko
+		wykorzystuje CROSS JOIN LATERAL.
+		
+		\begin{lstlisting}[caption={Pierwsza wersja zoptymalizowana},captionpos=b]
+CREATE OR REPLACE FUNCTION SelectAllItemsInLocationInTimepointOptimised1(
+		location IN VARCHAR2,
+		timepoint IN TIMESTAMP
+) RETURN VARCHAR2 SQL_MACRO AS
+BEGIN
+	RETURN q'{
+	SELECT I1.item
+		FROM SelectAllEntitiesInLocationInTimepointOptimised(location, timepoint) E1
+			CROSS JOIN LATERAL
+			(SELECT * FROM SelectItemsOfPlayerInTimepointOptimised(E1.name, timepoint)) I1
+	}';
+END;
+		\end{lstlisting}
+		
+		Druga wersja zoptymalizowana, jest ręcznym pobraniem wartości, co
+		efektywnie daje taki sam efekt jak pierwsza wersja, 
+			
+		\begin{lstlisting}[caption={Druga wersja zoptymalizowana 2},captionpos=b]
+CREATE OR REPLACE FUNCTION SelectAllItemsInLocationInTimepointOptimised2(
+		loc IN VARCHAR2,
+		timepoint IN TIMESTAMP
+) RETURN VARCHAR2 SQL_MACRO AS
+BEGIN
+	RETURN q'{
+	SELECT * FROM entity_item_receivings i1, entity_in_location l1
+		WHERE l1.location = loc
+		AND l1.entered <= timepoint
+		AND (
+			l1.leaved >= timepoint
+			OR l1.leaved IS NULL
+		)
+		AND i1.owner = l1.name
+		AND i1.stamp <= timepoint
+		AND (
+			i1.abandonmentTIme >= timepoint
+			OR i1.abandonmentTIme IS NULL
+		)
+	}';
+END;
 		\end{lstlisting}
 		
 		Zapytania te zostały wywołane z losowo wybranymi argumentami w ramach
 		wygenerowanych danych. \\
 		
 		\begin{lstlisting}[caption={Wywołanie zapytań}, captionpos=b]
+SELECT item FROM SelectAllItemsInLocationInTimepointOptimised2('Alabama',
+		TO_TIMESTAMP('2000-01-15 15:14:12.000', 'YYYY-MM-DD HH24:MI:SS.FF6')) ORDER BY item;
+
+SELECT item FROM SelectAllItemsInLocationInTimepointOptimised1('Alabama',
+		TO_TIMESTAMP('2000-01-15 15:14:12.000', 'YYYY-MM-DD HH24:MI:SS.FF6')) ORDER BY item;
+
+SELECT item FROM SelectAllItemsInLocationInTimepointOptimised0('Alabama',
+		TO_TIMESTAMP('2000-01-15 15:14:12.000', 'YYYY-MM-DD HH24:MI:SS.FF6')) ORDER BY item;
+
+SELECT item FROM SelectAllItemsInLocationInTimepoint('Alabama',
+		TO_TIMESTAMP('2000-01-15 15:14:12.000', 'YYYY-MM-DD HH24:MI:SS.FF6')) ORDER BY item;
 		\end{lstlisting}
+		
+		Poniżej znajduje się ogólne porównanie wydajności zapytań. Można
+		zauważyć, że tym razem w przeciwieństwie do zapytania pobierającego
+		przedmioty entity w danej chwili, wersja takiego samego zapytania z
+		CROSS JOIN LATERAL jest około dwukrotnie szybsza, niż INNER JOIN. \\
 		
 		\begin{tabularx}{\textwidth}{|X|X|X|X|X|}
 			\hline
 			wersja & koszt & koszt io & CPU cost & przyspieszenie \\
 			\hline
-			niezoptymalizowana &  &  &  &  \
+			niezoptymalizowana & 413 & 408 & 70,874,458 & 1.0 \\
 			\hline
-			zoptymalizowana &  &  &  &  \
+			zerowa zoptymalizowana & 208 & 204 & 53,097,785 & 1.33 \\
+			\hline
+			pierwsza zoptymalizowana & 207 & 204 & 38,721,642 & 1.83 \\
+			\hline
+			druga zoptymalizowana & 207 & 204 & 38,721,642 & 1.83 \\
 			\hline
 		\end{tabularx}
 		
-		\begin{tabularx}{\textwidth}{|X|X|X|X|X|X|}
-		\end{tabularx}
+		Poniżej znajduje się plan niezoptymalizowanego zapytania \\
 		
 		\begin{tabularx}{\textwidth}{|X|X|X|X|X|X|}
+Operation&Object&Optimizer&Cost&Cardinality&Bytes\\ \hline
+SELECT STATEMENT& - &ALL\_ROWS&413&1&13\\ \hline
+SORT (ORDER BY)& - &[NULL]&413&1&13\\ \hline
+VIEW& - &[NULL]&413&1&13\\ \hline
+HASH (UNIQUE)& - &[NULL]&413&1&153\\ \hline
+HASH JOIN (ANTI)& - &[NULL]&412&1&153\\ \hline
+HASH JOIN& - &[NULL]&274&1&136\\ \hline
+TABLE ACCESS (FULL)&TRANSACTIONS&ANALYZED&68&2782&125190\\ \hline
+MERGE JOIN (CARTESIAN)& - &[NULL]&206&5085&462735\\ \hline
+HASH JOIN (ANTI)& - &[NULL]&137&1&80\\ \hline
+TABLE ACCESS (FULL)&ENTITIES\_ENTERED\_LOCATION&ANALYZED&68&10&400\\ \hline
+TABLE ACCESS (FULL)&ENTITIES\_ENTERED\_LOCATION&ANALYZED&68&2533&101320\\ \hline
+BUFFER (SORT)& - &[NULL]&137&49105&540155\\ \hline
+TABLE ACCESS (FULL)&TRANSACTION\_ENTRIES&ANALYZED&69&49105&540155\\ \hline
+VIEW&VW\_SQ\_1&[NULL]&138&7463&126871\\ \hline
+HASH JOIN& - &[NULL]&138&7463&186575\\ \hline
+TABLE ACCESS (FULL)&TRANSACTIONS&ANALYZED&68&2782&44512\\ \hline
+TABLE ACCESS (FULL)&TRANSACTION\_ENTRIES&ANALYZED&69&49105&441945\\ \hline
+		\end{tabularx}
+		
+		Poniżej znajduje się plan zerowego zoptymalizowanego zapytania \\
+		
+		\begin{tabularx}{\textwidth}{|X|X|X|X|X|X|}
+Operation&Object&Optimizer&Cost&Cardinality&Bytes\\ \hline
+SELECT STATEMENT& - &ALL\_ROWS&208&20&1260\\ \hline
+SORT (ORDER BY)& - &[NULL]&208&20&1260\\ \hline
+HASH JOIN& - &[NULL]&207&20&1260\\ \hline
+NESTED LOOPS& - &[NULL]&207&20&1260\\ \hline
+NESTED LOOPS& - &[NULL]&69&0&0\\ \hline
+STATISTICS COLLECTOR& - &[NULL]&69&0&0\\ \hline
+VIEW& - &[NULL]&69&7&133\\ \hline
+HASH (UNIQUE)& - &[NULL]&69&7&343\\ \hline
+TABLE ACCESS (FULL)&ENTITY\_IN\_LOCATION&ANALYZED&68&7&343\\ \hline
+INDEX (RANGE SCAN)&PRIMARY\_KEY&ANALYZED&0&0&0\\ \hline
+TABLE ACCESS (BY INDEX ROWID)&ENTITY\_ITEM\_RECEIVINGS&ANALYZED&137&3&132\\ \hline
+TABLE ACCESS (FULL)&ENTITY\_ITEM\_RECEIVINGS&ANALYZED&137&2702&118888\\ \hline
+		\end{tabularx}
+		
+		Poniżej znajduje się plan pierwszego zoptymalizowanego zapytania \\
+		
+		\begin{tabularx}{\textwidth}{|X|X|X|X|X|X|}
+Operation&Object&Optimizer&Cost&Cardinality&Bytes\\ \hline
+SELECT STATEMENT& - &ALL\_ROWS&207&20&260\\ \hline
+SORT (ORDER BY)& - &[NULL]&207&20&260\\ \hline
+VIEW&VM\_NWVW\_0&[NULL]&207&20&260\\ \hline
+HASH (UNIQUE)& - &[NULL]&207&20&1940\\ \hline
+HASH JOIN& - &[NULL]&206&20&1940\\ \hline
+TABLE ACCESS (FULL)&ENTITY\_IN\_LOCATION&ANALYZED&68&7&343\\ \hline
+TABLE ACCESS (FULL)&ENTITY\_ITEM\_RECEIVINGS&ANALYZED&137&2702&129696\\ \hline
+		\end{tabularx}
+		
+		Poniżej znajduje się plan drugiego zoptymalizowanego zapytania \\
+		
+		\begin{tabularx}{\textwidth}{|X|X|X|X|X|X|}
+Operation&Object&Optimizer&Cost&Cardinality&Bytes\\ \hline
+SELECT STATEMENT& - &ALL\_ROWS&207&20&1860\\ \hline
+SORT (ORDER BY)& - &[NULL]&207&20&1860\\ \hline
+HASH JOIN& - &[NULL]&206&20&1860\\ \hline
+NESTED LOOPS& - &[NULL]&206&20&1860\\ \hline
+NESTED LOOPS& - &[NULL]&68&0&0\\ \hline
+STATISTICS COLLECTOR& - &[NULL]&68&0&0\\ \hline
+TABLE ACCESS (FULL)&ENTITY\_IN\_LOCATION&ANALYZED&68&7&343\\ \hline
+INDEX (RANGE SCAN)&PRIMARY\_KEY&ANALYZED&0&0&0\\ \hline
+TABLE ACCESS (BY INDEX ROWID)&ENTITY\_ITEM\_RECEIVINGS&ANALYZED&137&3&132\\ \hline
+TABLE ACCESS (FULL)&ENTITY\_ITEM\_RECEIVINGS&ANALYZED&137&2702&118888\\ \hline
 		\end{tabularx}
 		
 		
@@ -1487,9 +1647,9 @@ TABLE ACCESS (FULL)&ENTITY\_ITEM\_RECEIVINGS&ANALYZED&137&8&352\\ \hline
 			\hline
 			wersja & koszt & koszt io & CPU cost & przyspieszenie \\
 			\hline
-			niezoptymalizowana &  &  &  &  \
+			niezoptymalizowana &  &  &  &  \\
 			\hline
-			zoptymalizowana &  &  &  &  \
+			zoptymalizowana &  &  &  &  \\
 			\hline
 		\end{tabularx}
 		
@@ -1528,9 +1688,9 @@ TABLE ACCESS (FULL)&ENTITY\_ITEM\_RECEIVINGS&ANALYZED&137&8&352\\ \hline
 			\hline
 			wersja & koszt & koszt io & CPU cost & przyspieszenie \\
 			\hline
-			niezoptymalizowana &  &  &  &  \
+			niezoptymalizowana &  &  &  &  \\
 			\hline
-			zoptymalizowana &  &  &  &  \
+			zoptymalizowana &  &  &  &  \\
 			\hline
 		\end{tabularx}
 		
@@ -1570,9 +1730,9 @@ TABLE ACCESS (FULL)&ENTITY\_ITEM\_RECEIVINGS&ANALYZED&137&8&352\\ \hline
 			\hline
 			wersja & koszt & koszt io & CPU cost & przyspieszenie \\
 			\hline
-			niezoptymalizowana &  &  &  &  \
+			niezoptymalizowana &  &  &  &  \\
 			\hline
-			zoptymalizowana &  &  &  &  \
+			zoptymalizowana &  &  &  &  \\
 			\hline
 		\end{tabularx}
 		
