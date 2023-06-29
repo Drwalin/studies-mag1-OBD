@@ -54,14 +54,19 @@ BEGIN
 END;
 
 
+
+
+
 BEGIN
 	ClearAllData();
-	CreateEntityTypes();
-	CreateItemCategories();
-	CreateLocations();
 	
+	CreateEntityTypes();
 	CreateEntities(100);
+	
+	CreateLocations();
 	FillEnterLocationsForAll(TO_DATE('2000-01-01', 'YYYY-MM-DD'), 1, 120, 1, 30);
+	
+	CreateItemCategories();
 	CreateItems(
 		TO_TIMESTAMP('2000-01-01 12:12:12.000', 'YYYY-MM-DD HH24:MI:SS.FF6'),
 		1,
@@ -82,6 +87,9 @@ BEGIN
 		1.0
 	);
 END;
+
+
+
 
 
 

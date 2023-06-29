@@ -143,10 +143,6 @@ CREATE GLOBAL TEMPORARY TABLE temp_itmes_from_b (
 	id INT
 ) ON COMMIT DELETE ROWS;
 
-
-
-
-
 CREATE OR REPLACE PROCEDURE CreateRandomMultiTransaction(
 		timepoint TIMESTAMP) IS
 	entityA VARCHAR2(64);
