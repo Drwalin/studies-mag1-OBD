@@ -18,6 +18,9 @@
 \usepackage{indentfirst}
 % do bibliografii
 \usepackage[sorting=ydnt, backend=biber]{biblatex}
+\usepackage{tabularx}
+
+\usepackage[left=1.0cm,right=1.0cm,top=1.0cm,bottom=2.0cm]{geometry}
 
 \usepackage{helvet}
 
@@ -859,13 +862,134 @@ END;
 	je ponownie wykorzystać w innych zapytaniach lub z innymi parametrami. Razem
 	z zapytaniem zaprezentowana jest jego optymalizacja.
 	\\
-	Już w trakcie tworzenia pierwszych zapytań 
+	W trakcie pisania pierwszych kolejnych zapytań, dało się zauważyć, że
+	używają podobnych wyrażeń. Ponieważ bardziej złożone zapytania często
+	wywołują mniej złożone zapytania, zaprezentowane zostaną kolejne coraz
+	bardziej złożone zapytania.
+	\\
+	W ramach optymalizacji zostały stworzone dwie dodatkowe tablice. Tablice te
+	zostały stworzone na podstawie najczęściej wykorzystywanych fragmentów
+	zapytań.
 	
+	\subsection{Podstawa optymalizacji, utworzenie tablic i ich wypełnienie}
+		\begin{lstlisting}[caption={Tablica łącząca entity, przedmiot, oraz
+		punkt w czasie początku i końca posiadania przedmiotu przez entity},
+		captionpos=b]
+CREATE TABLE entity_item_receivings (
+	stamp TIMESTAMP NOT NULL,
+	item INT NOT NULL, -- references items.id
+	transaction INT NOT NULL, -- references transactions.id
+	owner VARCHAR(64), --- references entities.name
+	abandonmentTIme TIMESTAMP,
+	
+	CONSTRAINT owner_ref2
+		FOREIGN KEY (owner)
+		REFERENCES entities (name),
+	
+	CONSTRAINT transaction_ref2
+		FOREIGN KEY (transaction)
+		REFERENCES transactions (id),
+	CONSTRAINT item_ref2
+		FOREIGN KEY (item)
+		REFERENCES items (id),
+		
+	CONSTRAINT primary_key
+		PRIMARY KEY (stamp, item, owner)
+);
+		\end{lstlisting}
+		
+		\begin{lstlisting}[caption={Wypełnienie tablicy
+		entity\_item\_receivings},captionpos=b]
+CREATE OR REPLACE VIEW basic_entity_item_receivings AS 
+	SELECT
+		T1.stamp stamp,
+		TE1.item item, 
+		CASE WHEN TE1.from_a = 0 THEN T1.owner_a ELSE T1.owner_b END owner,
+		T1.id transaction
+	FROM transaction_entries TE1, transactions T1
+	WHERE T1.id = TE1.transaction;
+
+CREATE OR REPLACE VIEW view_for_creating_entity_item_receive AS
+	SELECT b1.stamp stamp, b1.item item, b1.owner owner, b1.transaction transaction, b2.stamp abandonmentTIme
+	FROM basic_entity_item_receivings b1, basic_entity_item_receivings b2
+	WHERE b1.item = b2.item
+	AND b1.stamp < b2.stamp
+	AND (
+			SELECT count(*)
+			FROM basic_entity_item_receivings b3
+			WHERE b3.item = b1.item
+			AND b3.stamp < b2.stamp
+			AND b3.stamp > b1.stamp
+		) = 0
+UNION
+	SELECT b1.stamp, b1.item, b1.owner, b1.transaction, NULL
+	FROM basic_entity_item_receivings b1
+	WHERE (
+			SELECT count(*)
+			FROM basic_entity_item_receivings b3
+			WHERE b3.item = b1.item
+			AND b3.stamp > b1.stamp
+		) = 0;
+	
+INSERT INTO entity_item_receivings (stamp, item, owner, transaction, abandonmentTIme)
+	SELECT stamp, item, owner, transaction, abandonmentTIme
+	FROM view_for_creating_entity_item_receive;
+		\end{lstlisting}
+		
+		\begin{lstlisting}[caption={Tablica zawierająca początek i koniec
+		przebywania entity w lokalizacji}, captionpos=b]
+CREATE TABLE entity_in_location (
+	name VARCHAR(64) NOT NULL, -- references entities.name
+	location VARCHAR(128) NOT NULL, -- references locations.name
+	entered TIMESTAMP,
+	leaved TIMESTAMP,
+	
+	CONSTRAINT location_ref3
+		FOREIGN KEY (location)
+		REFERENCES locations (name),
+	CONSTRAINT entity_ref3
+		FOREIGN KEY (name)
+		REFERENCES entities (name)
+);
+		\end{lstlisting}
+		
+		\begin{lstlisting}[caption={Wypełnienie tablicy entity\_in\_location},
+		captionpos=b]
+CREATE OR REPLACE VIEW view_for_creating_entity_in_location AS
+	SELECT L1.name name, L1.location location, L1.date_time entered, L2.date_time leaved
+	FROM entities_entered_location L1, entities_entered_location L2
+	WHERE L1.name = L2.name
+	AND L1.date_time < L2.date_time
+	AND (
+		SELECT count(*)
+		FROM entities_entered_location L3
+		WHERE L3.name = L1.name
+		AND L3.date_time > L1.date_time
+		AND L3.date_time < L2.date_time
+	) = 0
+UNION
+	SELECT L1.name, L1.location, L1.date_time, NULL
+	FROM entities_entered_location L1
+	WHERE (
+		SELECT count(*)
+		FROM entities_entered_location L3
+		WHERE L3.name = L1.name
+		AND L3.date_time > L1.date_time
+	) = 0;
+
+INSERT INTO entity_in_location (name, location, entered, leaved)
+	SELECT name, location, entered, leaved
+	FROM view_for_creating_entity_in_location;
+		\end{lstlisting}
+	
+		
+		
+		
+		
 	\subsection{Pobranie wszystkich entity będących w podanej lokalizacji w
 	podanej chwili czasu}
 			
-		\begin{lstlisting}[caption={Pobranie wszystkich entity będących w
-		podanej lokalizacji w podanej chwili czasu},captionpos=b]
+		\begin{lstlisting}[caption={Wersja niezoptymalizowana},captionpos=b]
 CREATE OR REPLACE FUNCTION SelectAllEntitiesInLocationInTimepoint(
 		loc IN VARCHAR2,
 		timepoint IN TIMESTAMP
@@ -886,11 +1010,100 @@ BEGIN
 END;
 		\end{lstlisting}
 		
+		Optymalizacja w tym zapytaniu tylko używa nowych tablic, zamiast
+		oryginalnych, dzięki czemu otrzymane zostaje liniowe zapytanie.
+		
+		\begin{lstlisting}[caption={Wersja zoptymalizowana}, captionpos=b]
+CREATE OR REPLACE FUNCTION SelectAllEntitiesInLocationInTimepointOptimised(
+		loc IN VARCHAR2,
+		timepoint IN TIMESTAMP
+) RETURN VARCHAR2 SQL_MACRO AS
+BEGIN
+	RETURN q'{
+	SELECT DISTINCT EL1.name
+		FROM entity_in_location EL1
+		WHERE EL1.location = loc
+		AND EL1.entered <= timepoint
+		AND (
+			EL1.leaved > timepoint
+			OR EL1.leaved IS NULL
+		)
+	}';
+END;
+		\end{lstlisting}
+		
+		Zapytania te zostały wywołane z losowo wybranymi argumentami w ramach
+		wygenerowanych danych. \\
+		
+		\begin{lstlisting}[caption={Wywołanie zapytań}, captionpos=b]
+SELECT * FROM SelectAllEntitiesInLocationInTimepointOptimised('Alabama',
+		TO_TIMESTAMP('2000-01-15 15:14:12.000', 'YYYY-MM-DD HH24:MI:SS.FF6')) ORDER BY name;
+
+SELECT * FROM SelectAllEntitiesInLocationInTimepoint('Alabama',
+		TO_TIMESTAMP('2000-01-15 15:14:12.000', 'YYYY-MM-DD HH24:MI:SS.FF6')) ORDER BY name;
+		\end{lstlisting}
+		
+		Zapytania te zwracają identyczny wynik.
+		\\
+		Poniżej znajduje się generalne porównanie wydajności zapytań. 
+		\\
+		
+		\begin{tabularx}{\textwidth}{|X|X|X|X|X|}
+			\hline
+			wersja & koszt & koszt io & CPU cost & przyspieszenie \\
+			\hline
+			niezoptymalizowana & 138 & 136 & 27,392,962 & 1.0 \\
+			\hline
+			zoptymalizowana & 69 & 68 & 20,396,278 & 1.34 \\
+			\hline
+		\end{tabularx}
+		
+		Poniżej znajduje się pełen plan wykonania niezoptymalizowanego
+		zapytania.
+		\\
+		
+		\begin{tabularx}{\textwidth}{|X|X|X|X|X|X|}
+Operation&Object&Optimizer&Cost&Cardinality&Bytes\\\hline
+SELECT STATEMENT & - & ALL\_ROWS&138&1&34\\\hline
+SORT (ORDER BY) & - & [NULL]&138&1&34\\\hline
+VIEW & - & [NULL]&138&1&34\\\hline
+HASH (UNIQUE) & - & [NULL]&138&1&80\\\hline
+HASH JOIN (ANTI) & - & [NULL]&137&1&80\\\hline
+TABLE ACCESS (FULL)&ENTITIES\_ENTERED\_LOCATION&ANALYZED&68&10&400\\\hline
+TABLE ACCESS (FULL)&ENTITIES\_ENTERED\_LOCATION&ANALYZED&68&2533&101320\\\hline
+		\end{tabularx}
+		
+		Poniżej znajduje się pełen plan wykonania niezoptymalizowanego
+		zapytania.
+		\\
+		
+		\begin{tabularx}{\textwidth}{|X|X|X|X|X|X|}
+Operation&Object&Optimizer&Cost&Cardinality&Bytes\\\hline
+SELECT STATEMENT& - &ALL\_ROWS&69&7&238\\\hline
+SORT (ORDER BY)& - &[NULL]&69&7&238\\\hline
+VIEW& - &[NULL]&69&7&238\\\hline
+HASH (UNIQUE)& - &[NULL]&69&7&343\\\hline
+TABLE ACCESS (FULL)&ENTITY\_IN\_LOCATION&ANALYZED&68&7&343\\\hline
+		\end{tabularx}
+		
+		
+		
+		
+		
+		
+		
+		
+		
+		
+		
+		
+		
+		
+		
 	
 	\subsection{Pobranie właściciela przedmiotu w podanej chwili}
 			
-		\begin{lstlisting}[caption={Pobranie właściciela przedmiotu w podanej
-		chwili},captionpos=b]
+		\begin{lstlisting}[caption={Wersja niezoptymalizowana},captionpos=b]
 CREATE OR REPLACE FUNCTION SelectItemOwnerInTimepoint(
 		itemId IN INT,
 		timepoint IN TIMESTAMP
@@ -914,12 +1127,98 @@ BEGIN
 END;
 		\end{lstlisting}
 		
-	
-	\subsection{Pobranie przedmiotów entity w punkcie
-		czasu}
+		Optymalizacja w przypadku tego zapytania wygląda identycznie jak w
+		przypadku poprzedniego. Wystarczy zastosować nową tablicę w trywialny
+		sposób.
+		\\
 			
-		\begin{lstlisting}[caption={Pobranie przedmiotów entity w punkcie
-		czasu},captionpos=b]
+		\begin{lstlisting}[caption={Wersja zoptymalizowana},captionpos=b]
+CREATE OR REPLACE FUNCTION SelectItemOwnerInTimepointOptimised(
+		itemId IN INT,
+		timepoint IN TIMESTAMP
+		) RETURN VARCHAR2 SQL_MACRO AS
+BEGIN
+	RETURN q'{
+	SELECT owner, null, transaction, item, stamp FROM entity_item_receivings
+		WHERE stamp <= timepoint
+		AND abandonmentTIme > timePoint
+		AND item = itemId
+	}';
+END;
+		\end{lstlisting}
+		
+		Zapytania te zostały wywołane z losowo wybranymi argumentami w ramach
+		wygenerowanych danych. \\
+		
+		\begin{lstlisting}[caption={Wywołanie zapytań}, captionpos=b]
+SELECT * FROM SelectItemOwnerInTimepointOptimised(37,
+	TO_TIMESTAMP('2000-01-15 15:14:12.000', 'YYYY-MM-DD HH24:MI:SS.FF6'));
+
+SELECT * FROM SelectItemOwnerInTimepoint(37,
+	TO_TIMESTAMP('2000-01-15 15:14:12.000', 'YYYY-MM-DD HH24:MI:SS.FF6'));
+		\end{lstlisting}
+		
+		Poniżej znajduje się ogólne porównanie wydajności zapytań \\
+		
+		\begin{tabularx}{\textwidth}{|X|X|X|X|X|}
+			\hline
+			wersja & koszt & koszt io & CPU cost & przyspieszenie \\
+			\hline
+			niezoptymalizowana & 199 & 197 & 35,434,990 & 1.0 \\
+			\hline
+			zoptymalizowana & 33 & 33 & 869,058 & 40.8 \\
+			\hline
+		\end{tabularx}
+		
+		Poniżej znajduje się plan niezoptymalizowanego zapytania \\
+		
+		\begin{tabularx}{\textwidth}{|X|X|X|X|X|X|}
+Operation&Object&Optimizer&Cost&Cardinality&Bytes\\\hline
+SELECT STATEMENT& - &ALL\_ROWS&199&6&366\\\hline
+FILTER& - &[NULL]&111&0&0\\\hline
+HASH JOIN& - &[NULL]&75&6&366\\\hline
+NESTED LOOPS& - &[NULL]&75&6&366\\\hline
+NESTED LOOPS& - &[NULL]&75&6&366\\\hline
+STATISTICS COLLECTOR& - &[NULL]&69&0&0\\\hline
+TABLE ACCESS (FULL)&TRANSACTION\_ENTRIES&ANALYZED&69&6&96\\\hline
+INDEX (UNIQUE SCAN)&SYS\_C0054184&ANALYZED&0&1&0\\\hline
+TABLE ACCESS (BY INDEX ROWID)&TRANSACTIONS&ANALYZED&1&1&45\\\hline
+TABLE ACCESS (FULL)&TRANSACTIONS&ANALYZED&1&1&45\\\hline
+FILTER& - &[NULL]&36&0&0\\\hline
+NESTED LOOPS (SEMI)& - &[NULL]&36&3&75\\\hline
+TABLE ACCESS (FULL)&TRANSACTION\_ENTRIES&ANALYZED&33&6&54\\\hline
+TABLE ACCESS (BY INDEX ROWID)&TRANSACTIONS&ANALYZED&1&1&16\\\hline
+INDEX (UNIQUE SCAN)&SYS\_C0054184&ANALYZED&0&1&0\\\hline
+		\end{tabularx}
+		
+		Poniżej znajduje się plan zoptymalizowanego zapytania \\
+		
+		\begin{tabularx}{\textwidth}{|X|X|X|X|X|X|}
+Operation&Object&Optimizer&Cost&Cardinality&Bytes\\\hline
+SELECT STATEMENT& - &ALL\_ROWS&33&1&48\\\hline
+TABLE ACCESS (BY INDEX ROWID BATCHED)&ENTITY\_ITEM\_RECEIVINGS&ANALYZED&33&1&48\\\hline
+INDEX (RANGE SCAN)&PRIMARY\_KEY&ANALYZED&32&1&0\\\hline
+		\end{tabularx}
+	
+		
+		
+		
+		
+		
+		
+		
+		
+		
+		
+		
+		
+	\subsection{Pobranie przedmiotów entity w chwili}
+			
+		Pierwszy najprostrzy sposób na pobranie wszystkich przedmiotów entity,
+		to sprawdzenie czy każdy z przedmiotów należy do danego entity w danej
+		chwili.
+		
+		\begin{lstlisting}[caption={Pierwsza wersja niezoptymalizowana},captionpos=b]
 CREATE OR REPLACE FUNCTION SelectItemsOfPlayerInTimepointUnoptimisedVery(
 		playerName IN VARCHAR2,
 		timepoint IN TIMESTAMP
@@ -935,109 +1234,361 @@ BEGIN
 	}';
 END;
 		\end{lstlisting}
+			
+		Chciałem zobaczyć, jaka będzie różnica pomiędzy domyślnym INNER JOIN, a
+		CROSS JOIN LATERAL, dzięki któremu można było pobrać więcej informacji
+		niż tylko id przedmiotu.
+		
+		\begin{lstlisting}[caption={Druga wesja niezoptymalizowana},captionpos=b]
+CREATE OR REPLACE FUNCTION SelectItemsOfPlayerInTimepointUnoptimisedVery2(
+		playerName IN VARCHAR2,
+		timepoint IN TIMESTAMP
+) RETURN VARCHAR2 SQL_MACRO AS
+BEGIN
+	RETURN q'{
+	SELECT IT.id id, IT.id item FROM items IT
+		CROSS JOIN LATERAL
+		(
+			SELECT *
+			FROM SelectItemOwnerInTimepoint(IT.id, timepoint) 
+		) O1
+	WHERE
+		O1.taker = playerName
+	}';
+END;
+		\end{lstlisting}
+		
+		Pierwsza optymalizacja na istniejącej od początku strukturze bazy
+		danych - nie polega na prostych w wykorzystaniu instniejących funkcjach.
+			
+		\begin{lstlisting}[caption={Wersja trochę zoptymalizowana},captionpos=b]
+CREATE OR REPLACE FUNCTION SelectItemsOfPlayerInTimepoint(
+		playerName IN VARCHAR2,
+		timepoint IN TIMESTAMP
+) RETURN VARCHAR2 SQL_MACRO AS
+BEGIN
+	RETURN q'{
+	SELECT * FROM
+		(SELECT DISTINCT TE1.id, TE1.TRANSACTION, TE1.item,
+				CASE WHEN TE1.from_a = 1 THEN T1.owner_a ELSE T1.owner_b END giver,
+				CASE WHEN TE1.from_a = 0 THEN T1.owner_a ELSE T1.owner_b END taker,
+				T1.stamp, TE1.from_a, T1.owner_a, T1.owner_b
+			FROM transaction_entries TE1, transactions T1
+			WHERE TE1.transaction = T1.id) TT
+		WHERE stamp <= timepoint
+		AND taker = playerName
+		AND (SELECT COUNT(*) FROM transaction_entries TE2, transactions T2
+			WHERE TE2.transaction = T2.id
+			AND TE2.item = TT.item
+			AND T2.stamp <= timepoint
+			AND T2.stamp > TT.stamp
+		) = 0
+	}';
+END;
+		\end{lstlisting}
+		
+		Wersja zoptymalizowana w trywialny sposób wykorzystująca nową tabelę.
+			
+		\begin{lstlisting}[caption={Wersja zoptymalizowana},captionpos=b]
+CREATE OR REPLACE FUNCTION SelectItemsOfPlayerInTimepointOptimised(
+		playerName IN VARCHAR2,
+		timepoint IN TIMESTAMP
+) RETURN VARCHAR2 SQL_MACRO AS
+BEGIN
+	RETURN q'{
+	SELECT * FROM entity_item_receivings
+		WHERE owner = playerName
+		AND stamp <= timepoint
+		AND (
+			abandonmentTIme > timepoint
+			OR abandonmentTIme IS NULL
+		)
+	}';
+END;
+		\end{lstlisting}
+		
+		Zapytania te zostały wywołane z losowo wybranymi argumentami w ramach
+		wygenerowanych danych. \\
+		
+		\begin{lstlisting}[caption={Wywołanie zapytań}, captionpos=b]
+SELECT item FROM SelectItemsOfPlayerInTimepointOptimised('Jamie',
+	TO_TIMESTAMP('2005-02-02 12:12:12.000', 'YYYY-MM-DD HH24:MI:SS.FF6')) ORDER BY item;
+
+SELECT item FROM SelectItemsOfPlayerInTimepoint('Jamie',
+	TO_TIMESTAMP('2005-02-02 12:12:12.000', 'YYYY-MM-DD HH24:MI:SS.FF6')) ORDER BY item;
+
+SELECT id FROM SelectItemsOfPlayerInTimepointUnoptimisedVery('Jamie',
+	TO_TIMESTAMP('2005-02-02 12:12:12.000', 'YYYY-MM-DD HH24:MI:SS.FF6')) ORDER BY id;
+
+SELECT id FROM SelectItemsOfPlayerInTimepointUnoptimisedVery2('Jamie',
+	TO_TIMESTAMP('2005-02-02 12:12:12.000', 'YYYY-MM-DD HH24:MI:SS.FF6')) ORDER BY id;
+		\end{lstlisting}
+		
+		\begin{tabularx}{\textwidth}{|X|X|X|X|X|}
+			\hline
+			wersja & koszt & koszt io & CPU cost & przyspieszenie \\
+			\hline
+			pierwsza niezoptymalizowana & 444,298 & 438,898 & 77,626,379,927 &
+			0.00111 \\
+			\hline
+			druga niezoptymalizowana & 840,734 & 830,237 & 150,898,972,255 &
+			0.00057 \
+			\hline
+			trochę zoptymalizowana & 278 & 272 & 86,239,666 & 1.0 \
+			\hline
+			zoptymalizowana & 138 & 136 & 31,661,431 & 2.723 \
+			\hline
+		\end{tabularx}
+		
+		Poniżej znajduje się plan pierwszego niezoptymalizowanego zapytania \\
+		
+		\begin{tabularx}{\textwidth}{|X|X|X|X|X|X|}
+Operation&Object&Optimizer&Cost&Cardinality&Bytes\\ \hline
+SELECT STATEMENT& - &ALL\_ROWS&444298&1&4\\ \hline
+SORT (ORDER BY)& - &[NULL]&444298&1&4\\ \hline
+FILTER& - &[NULL]&66&0&0\\ \hline
+INDEX (FAST FULL SCAN)&SYS\_C0054181&ANALYZED&6&7590&30360\\ \hline
+FILTER& - &[NULL]&60&0&0\\ \hline
+NESTED LOOPS& - &[NULL]&24&2&112\\ \hline
+NESTED LOOPS& - &[NULL]&24&2&112\\ \hline
+TABLE ACCESS (FULL)&TRANSACTION\_ENTRIES&ANALYZED&22&6&66\\ \hline
+INDEX (UNIQUE SCAN)&SYS\_C0054184&ANALYZED&0&1&0\\ \hline
+TABLE ACCESS (BY INDEX ROWID)&TRANSACTIONS&ANALYZED&1&1&45\\ \hline
+FILTER& - &[NULL]&36&0&0\\ \hline
+NESTED LOOPS (SEMI)& - &[NULL]&36&3&75\\ \hline
+TABLE ACCESS (FULL)&TRANSACTION\_ENTRIES&ANALYZED&33&6&54\\ \hline
+TABLE ACCESS (BY INDEX ROWID)&TRANSACTIONS&ANALYZED&1&1&16\\ \hline
+INDEX (UNIQUE SCAN)&SYS\_C0054184&ANALYZED&0&1&0\\ \hline
+		\end{tabularx}
+		
+		Poniżej znajduje się plan drugiego niezoptymalizowanego zapytania \\
+		
+		\begin{tabularx}{\textwidth}{|X|X|X|X|X|X|}
+Operation&Object&Optimizer&Cost&Cardinality&Bytes\\ \hline
+SELECT STATEMENT& - &ALL\_ROWS&840734&7590&30360\\ \hline
+SORT (ORDER BY)& - &[NULL]&840734&7590&30360\\ \hline
+NESTED LOOPS& - &[NULL]&840733&7590&30360\\ \hline
+INDEX (FAST FULL SCAN)&SYS\_C0054181&ANALYZED&6&7590&30360\\ \hline
+VIEW&VW\_LAT\_1F2F733B&[NULL]&111&1&0\\ \hline
+FILTER& - &[NULL]&111&0&0\\ \hline
+HASH JOIN& - &[NULL]&75&1&56\\ \hline
+NESTED LOOPS& - &[NULL]&75&1&56\\ \hline
+NESTED LOOPS& - &[NULL]&75&6&56\\ \hline
+STATISTICS COLLECTOR& - &[NULL]&69&0&0\\ \hline
+TABLE ACCESS (FULL)&TRANSACTION\_ENTRIES&ANALYZED&69&6&66\\ \hline
+INDEX (UNIQUE SCAN)&SYS\_C0054184&ANALYZED&0&1&0\\ \hline
+TABLE ACCESS (BY INDEX ROWID)&TRANSACTIONS&ANALYZED&1&1&45\\ \hline
+TABLE ACCESS (FULL)&TRANSACTIONS&ANALYZED&1&1&45\\ \hline
+FILTER& - &[NULL]&36&0&0\\ \hline
+NESTED LOOPS (SEMI)& - &[NULL]&36&3&75\\ \hline
+TABLE ACCESS (FULL)&TRANSACTION\_ENTRIES&ANALYZED&33&6&54\\ \hline
+TABLE ACCESS (BY INDEX ROWID)&TRANSACTIONS&ANALYZED&1&1&16\\ \hline
+INDEX (UNIQUE SCAN)&SYS\_C0054184&ANALYZED&0&1&0\\ \hline
+		\end{tabularx}
+		
+		Poniżej znajduje się plan pierwszego zoptymalizowanego zapytania \\
+		
+		\begin{tabularx}{\textwidth}{|X|X|X|X|X|X|}
+Operation&Object&Optimizer&Cost&Cardinality&Bytes\\ \hline
+SELECT STATEMENT& - &ALL\_ROWS&278&5&170\\ \hline
+SORT (ORDER BY)& - &[NULL]&278&5&170\\ \hline
+HASH JOIN (ANTI)& - &[NULL]&277&5&170\\ \hline
+VIEW& - &[NULL]&139&486&8262\\ \hline
+HASH (UNIQUE)& - &[NULL]&139&486&29646\\ \hline
+HASH JOIN& - &[NULL]&138&486&29646\\ \hline
+TABLE ACCESS (FULL)&TRANSACTIONS&ANALYZED&68&18131&815895\\ \hline
+TABLE ACCESS (FULL)&TRANSACTION\_ENTRIES&ANALYZED&69&49105&785680\\ \hline
+VIEW&VW\_SQ\_1&[NULL]&138&48646&826982\\ \hline
+HASH JOIN& - &[NULL]&138&48646&1216150\\ \hline
+TABLE ACCESS (FULL)&TRANSACTIONS&ANALYZED&68&18131&290096\\ \hline
+TABLE ACCESS (FULL)&TRANSACTION\_ENTRIES&ANALYZED&69&49105&441945\\ \hline
+		\end{tabularx}
+		
+		Poniżej znajduje się plan zoptymalizowanego zapytania \\
+		
+		\begin{tabularx}{\textwidth}{|X|X|X|X|X|X|}
+Operation&Object&Optimizer&Cost&Cardinality&Bytes\\ \hline
+SELECT STATEMENT& - &ALL\_ROWS&138&8&352\\ \hline
+SORT (ORDER BY)& - &[NULL]&138&8&352\\ \hline
+TABLE ACCESS (FULL)&ENTITY\_ITEM\_RECEIVINGS&ANALYZED&137&8&352\\ \hline
+		\end{tabularx}
+		
+		
+		
+		
+		
+		
+		
+		
+		
+		
+		
+		
 		
 	
 	\subsection{Pobranie przedmiotów, które w podanym momencie znajdowały się w
 	podanej lokalizacji}
 			
-		\begin{lstlisting}[caption={Pobranie przedmiotów, które w podanym
-		momencie znajdowały się w podanej lokalizacji},captionpos=b]
-CREATE OR REPLACE FUNCTION SelectAllItemsInLocationInTimepoint(
-		location IN VARCHAR2,
-		timepoint IN TIMESTAMP
-) RETURN VARCHAR2 SQL_MACRO AS
-BEGIN
-	RETURN q'{
-	SELECT UNIQUE I1.item
-		FROM SelectAllEntitiesInLocationInTimepoint(location, timepoint) E1
-			CROSS JOIN LATERAL
-			(SELECT * FROM SelectItemsOfPlayerInTimepoint(E1.name, timepoint)) I1
-	}';
-END;
+		\begin{lstlisting}[caption={Wersja niezoptymalizowana},captionpos=b]
 		\end{lstlisting}
+			
+		\begin{lstlisting}[caption={Wersja zoptymalizowana},captionpos=b]
+		\end{lstlisting}
+		
+		Zapytania te zostały wywołane z losowo wybranymi argumentami w ramach
+		wygenerowanych danych. \\
+		
+		\begin{lstlisting}[caption={Wywołanie zapytań}, captionpos=b]
+		\end{lstlisting}
+		
+		\begin{tabularx}{\textwidth}{|X|X|X|X|X|}
+			\hline
+			wersja & koszt & koszt io & CPU cost & przyspieszenie \\
+			\hline
+			niezoptymalizowana &  &  &  &  \
+			\hline
+			zoptymalizowana &  &  &  &  \
+			\hline
+		\end{tabularx}
+		
+		\begin{tabularx}{\textwidth}{|X|X|X|X|X|X|}
+		\end{tabularx}
+		
+		\begin{tabularx}{\textwidth}{|X|X|X|X|X|X|}
+		\end{tabularx}
+		
+		
+		
+		
+		
+		
+		
+		
+		
+		
 		
 	
 	\subsection{Pobranie wszystkich przedmiotów, które chociaż przez chwilę
 	znajdowału się w podanej lokalizacji w podanym zakresie czasu}
 			
-		\begin{lstlisting}[caption={Pobranie wszystkich przedmiotów, które
-		chociaż przez chwilę znajdowału się w podanej lokalizacji w podanym
-		zakresie czasu},captionpos=b]
-CREATE OR REPLACE FUNCTION SelectAllItemsInLocationDuring(
-		loc IN VARCHAR2,
-		timeStart IN TIMESTAMP,
-		timeEnd IN TIMESTAMP
-) RETURN VARCHAR2 SQL_MACRO AS
-BEGIN
- 	RETURN q'{
-	SELECT DISTINCT item FROM (
-		SELECT item FROM
-			(SELECT DISTINCT E1.item
-				FROM entities_entered_location EL1,
-					SelectAllItemsInLocationInTimepoint(loc, EL1.date_time) E1
-				WHERE EL1.date_time <= timeEnd
-				AND EL1.date_time >= timeStart)dbea
-			UNION ALL (SELECT DISTINCT E1.item
-				FROM transactions T1,
-					SelectAllItemsInLocationInTimepoint(loc, T1.stamp) E1
-				WHERE T1.stamp <= timeEnd
-				AND T1.stamp >= timeStart)
-			UNION ALL (SELECT item FROM
-				SelectAllItemsInLocationInTimepoint(loc, timeStart))
-			UNION ALL (SELECT item FROM
-				SelectAllItemsInLocationInTimepoint(loc, timeEnd))
-		)
- 	}';
-END;
+		\begin{lstlisting}[caption={Wersja niezoptymalizowana},captionpos=b]
 		\end{lstlisting}
+			
+		\begin{lstlisting}[caption={Wersja zoptymalizowana},captionpos=b]
+		\end{lstlisting}
+		
+		Zapytania te zostały wywołane z losowo wybranymi argumentami w ramach
+		wygenerowanych danych. \\
+		
+		\begin{lstlisting}[caption={Wywołanie zapytań}, captionpos=b]
+		\end{lstlisting}
+		
+		\begin{tabularx}{\textwidth}{|X|X|X|X|X|}
+			\hline
+			wersja & koszt & koszt io & CPU cost & przyspieszenie \\
+			\hline
+			niezoptymalizowana &  &  &  &  \
+			\hline
+			zoptymalizowana &  &  &  &  \
+			\hline
+		\end{tabularx}
+		
+		\begin{tabularx}{\textwidth}{|X|X|X|X|X|X|}
+		\end{tabularx}
+		
+		\begin{tabularx}{\textwidth}{|X|X|X|X|X|X|}
+		\end{tabularx}
+		
+		
+		
+		
+		
+		
+		
+		
+		
+		
 		
 	
 	\subsection{}
 			
-		\begin{lstlisting}[caption={},captionpos=b]
+		\begin{lstlisting}[caption={Wersja niezoptymalizowana},captionpos=b]
 		\end{lstlisting}
+			
+		\begin{lstlisting}[caption={Wersja zoptymalizowana},captionpos=b]
+		\end{lstlisting}
+		
+		Zapytania te zostały wywołane z losowo wybranymi argumentami w ramach
+		wygenerowanych danych. \\
+		
+		\begin{lstlisting}[caption={Wywołanie zapytań}, captionpos=b]
+		\end{lstlisting}
+		
+		\begin{tabularx}{\textwidth}{|X|X|X|X|X|}
+			\hline
+			wersja & koszt & koszt io & CPU cost & przyspieszenie \\
+			\hline
+			niezoptymalizowana &  &  &  &  \
+			\hline
+			zoptymalizowana &  &  &  &  \
+			\hline
+		\end{tabularx}
+		
+		\begin{tabularx}{\textwidth}{|X|X|X|X|X|X|}
+		\end{tabularx}
+		
+		\begin{tabularx}{\textwidth}{|X|X|X|X|X|X|}
+		\end{tabularx}
+		
+
+		
+		
+		
+		
+		
+		
+		
+		
+		
 		
 	
 	\subsection{}
 			
-		\begin{lstlisting}[caption={},captionpos=b]
+		\begin{lstlisting}[caption={Wersja niezoptymalizowana},captionpos=b]
+		\end{lstlisting}
+			
+		\begin{lstlisting}[caption={Wersja zoptymalizowana},captionpos=b]
 		\end{lstlisting}
 		
-	
-	\subsection{}
-			
-		\begin{lstlisting}[caption={},captionpos=b]
+		Zapytania te zostały wywołane z losowo wybranymi argumentami w ramach
+		wygenerowanych danych. \\
+		
+		\begin{lstlisting}[caption={Wywołanie zapytań}, captionpos=b]
 		\end{lstlisting}
 		
-	
-	\subsection{}
-			
-		\begin{lstlisting}[caption={},captionpos=b]
-		\end{lstlisting}
+		\begin{tabularx}{\textwidth}{|X|X|X|X|X|}
+			\hline
+			wersja & koszt & koszt io & CPU cost & przyspieszenie \\
+			\hline
+			niezoptymalizowana &  &  &  &  \
+			\hline
+			zoptymalizowana &  &  &  &  \
+			\hline
+		\end{tabularx}
 		
-	
-	\subsection{}
-			
-		\begin{lstlisting}[caption={},captionpos=b]
-		\end{lstlisting}
+		\begin{tabularx}{\textwidth}{|X|X|X|X|X|X|}
+		\end{tabularx}
 		
-	
-	\subsection{}
-			
-		\begin{lstlisting}[caption={},captionpos=b]
-		\end{lstlisting}
+		\begin{tabularx}{\textwidth}{|X|X|X|X|X|X|}
+		\end{tabularx}
 		
-	
-	\subsection{}
-			
-		\begin{lstlisting}[caption={},captionpos=b]
-		\end{lstlisting}
+
 		
-	
-	\subsection{}
-			
-		\begin{lstlisting}[caption={},captionpos=b]
-		\end{lstlisting}
+		
+		
+		
+		
+		
 		
 
 \newpage
