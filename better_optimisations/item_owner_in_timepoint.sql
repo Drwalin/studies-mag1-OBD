@@ -8,5 +8,11 @@ BEGIN
 		WHERE stamp <= timepoint
 		AND abandonmentTIme > timePoint
 		AND item = itemId
-		) = 0}';
+	}';
 END;
+
+SELECT * FROM SelectItemOwnerInTimepointOptimised(37,
+	TO_TIMESTAMP('2000-01-15 15:14:12.000', 'YYYY-MM-DD HH24:MI:SS.FF6'));
+
+SELECT * FROM SelectItemOwnerInTimepoint(37,
+	TO_TIMESTAMP('2000-01-15 15:14:12.000', 'YYYY-MM-DD HH24:MI:SS.FF6'));
