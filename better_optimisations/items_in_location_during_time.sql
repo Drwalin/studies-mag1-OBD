@@ -58,6 +58,8 @@ BEGIN
  	}';
 END;
 
+
+
 CREATE OR REPLACE FUNCTION SelectAllItemsInLocationInTimepointTesting(
 		location IN VARCHAR2,
 		timepoint IN TIMESTAMP
@@ -65,13 +67,13 @@ CREATE OR REPLACE FUNCTION SelectAllItemsInLocationInTimepointTesting(
 BEGIN
 	RETURN q'{
 	SELECT UNIQUE I1.item
-		FROM SelectAllEntitiesInLocationInTimepointOptimised(location, timepoint) E1
+		FROM SelectAllEntitiesInLocationInTimepoint(location, timepoint) E1
 			CROSS JOIN LATERAL
-			(SELECT * FROM SelectItemsOfPlayerInTimepoint(E1.name, timepoint)) I1
+			(SELECT * FROM SelectItemsOfPlayerInTimepointUnoptimisedVery(E1.name, timepoint)) I1
 	}';
 END;
-
-CREATE OR REPLACE FUNCTION SelectAllItemsInLocationDuringBetter2(
+	
+CREATE OR REPLACE FUNCTION SelectAllItemsInLocationDuringBetter3(
 		loc IN VARCHAR2,
 		timeStart IN TIMESTAMP,
 		timeEnd IN TIMESTAMP
@@ -80,15 +82,14 @@ BEGIN
  	RETURN q'{
 	SELECT DISTINCT item FROM (
 		SELECT item FROM
-			(SELECT E1.item
-				FROM (SELECT * FROM entities_entered_location l1
-					WHERE l1.date_time < timeEnd
-					AND l1.date_time >= timeStart
-				) EL1,
+			(SELECT DISTINCT E1.item
+				FROM (SELECT * FROM entities_entered_location
+					WHERE date_time <= timeEnd
+					AND date_time >= timeStart) EL1,
 				SelectAllItemsInLocationInTimepointTesting(loc, EL1.date_time) E1)
 			UNION ALL (SELECT DISTINCT E1.item
 				FROM (SELECT * FROM transactions 
-					WHERE stamp < timeEnd
+					WHERE stamp <= timeEnd
 					AND stamp >= timeStart) T1,
 				SelectAllItemsInLocationInTimepointTesting(loc, T1.stamp) E1)
 			UNION ALL (SELECT item FROM
@@ -98,14 +99,15 @@ BEGIN
 		)
  	}';
 END;
-
-
-SELECT * FROM SelectAllItemsInLocationDuringBetter2('Alabama',
+	
+SELECT * FROM SelectAllItemsInLocationDuringBetter3('Alabama',
 		TO_TIMESTAMP('2000-01-01 15:14:12.000', 'YYYY-MM-DD HH24:MI:SS.FF6'),
 		TO_TIMESTAMP('2000-01-15 15:14:12.000', 'YYYY-MM-DD HH24:MI:SS.FF6')) ORDER BY item;
-
-
-
+	
+	
+	
+	
+	
 
 SELECT * FROM SYS.USER_ERRORS;
 

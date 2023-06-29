@@ -4,28 +4,44 @@ CREATE OR REPLACE FUNCTION SelectItemsOfPlayerInTimepoint(
 ) RETURN VARCHAR2 SQL_MACRO AS
 BEGIN
 	RETURN q'{
-	SELECT DISTINCT TE1.id, TE1.TRANSACTION, TE1.item,
-			CASE WHEN TE1.from_a = 1 THEN T1.owner_a ELSE T1.owner_b END giver,
-			CASE WHEN TE1.from_a = 0 THEN T1.owner_a ELSE T1.owner_b END taker,
-			T1.stamp, TE1.from_a, T1.owner_a, T1.owner_b
-		FROM transaction_entries TE1, transactions T1
-		WHERE TE1.transaction = T1.id
-		AND T1.stamp <= timepoint
-		AND ((
-			TE1.from_a = 1
-			AND playerName = T1.owner_b
-		) OR (
-			TE1.from_a = 0
-			AND playerName = T1.owner_a
-		))
+	SELECT * FROM
+		(SELECT DISTINCT TE1.id, TE1.TRANSACTION, TE1.item,
+				CASE WHEN TE1.from_a = 1 THEN T1.owner_a ELSE T1.owner_b END giver,
+				CASE WHEN TE1.from_a = 0 THEN T1.owner_a ELSE T1.owner_b END taker,
+				T1.stamp, TE1.from_a, T1.owner_a, T1.owner_b
+			FROM transaction_entries TE1, transactions T1
+			WHERE TE1.transaction = T1.id) TT
+		WHERE stamp <= timepoint
+		AND taker = playerName
 		AND (SELECT COUNT(*) FROM transaction_entries TE2, transactions T2
 			WHERE TE2.transaction = T2.id
-			AND TE2.item = TE1.item
+			AND TE2.item = TT.item
 			AND T2.stamp <= timepoint
-			AND T2.stamp > T1.stamp
+			AND T2.stamp > TT.stamp
 		) = 0
 	}';
 END;
+		
+-- 	SELECT DISTINCT TE1.id, TE1.TRANSACTION, TE1.item,
+-- 			CASE WHEN TE1.from_a = 1 THEN T1.owner_a ELSE T1.owner_b END giver,
+-- 			CASE WHEN TE1.from_a = 0 THEN T1.owner_a ELSE T1.owner_b END taker,
+-- 			T1.stamp, TE1.from_a, T1.owner_a, T1.owner_b
+-- 		FROM transaction_entries TE1, transactions T1
+-- 		WHERE TE1.transaction = T1.id
+-- 		AND T1.stamp <= timepoint
+-- 		AND ((
+-- 			TE1.from_a = 1
+-- 			AND playerName = T1.owner_b
+-- 		) OR (
+-- 			TE1.from_a = 0
+-- 			AND playerName = T1.owner_a
+-- 		))
+-- 		AND (SELECT COUNT(*) FROM transaction_entries TE2, transactions T2
+-- 			WHERE TE2.transaction = T2.id
+-- 			AND TE2.item = TE1.item
+-- 			AND T2.stamp <= timepoint
+-- 			AND T2.stamp > T1.stamp
+-- 		) = 0
 
 CREATE OR REPLACE FUNCTION SelectItemsOfPlayerInTimepointUnoptimisedVery2(
 		playerName IN VARCHAR2,
@@ -33,7 +49,7 @@ CREATE OR REPLACE FUNCTION SelectItemsOfPlayerInTimepointUnoptimisedVery2(
 ) RETURN VARCHAR2 SQL_MACRO AS
 BEGIN
 	RETURN q'{
-	SELECT IT.id FROM items IT
+	SELECT IT.id id, IT.id item FROM items IT
 		CROSS JOIN LATERAL
 		(
 			SELECT *
@@ -50,7 +66,7 @@ CREATE OR REPLACE FUNCTION SelectItemsOfPlayerInTimepointUnoptimisedVery(
 ) RETURN VARCHAR2 SQL_MACRO AS
 BEGIN
 	RETURN q'{
-	SELECT id FROM items IT
+	SELECT id id, id item FROM items IT
 	WHERE
 		(
 			SELECT taker
