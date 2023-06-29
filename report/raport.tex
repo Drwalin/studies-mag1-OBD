@@ -854,6 +854,191 @@ END;
     \end{lstlisting}
 
 \section{Zapytania}
+	Na powyższej bazie danych zostały przygotowane zapytania wyciągające różne
+	dane. Zapytania zostały utworzone w formie makr sql, żeby łatwo można było
+	je ponownie wykorzystać w innych zapytaniach lub z innymi parametrami. Razem
+	z zapytaniem zaprezentowana jest jego optymalizacja.
+	\\
+	Już w trakcie tworzenia pierwszych zapytań 
+	
+	\subsection{Pobranie wszystkich entity będących w podanej lokalizacji w
+	podanej chwili czasu}
+			
+		\begin{lstlisting}[caption={Pobranie wszystkich entity będących w
+		podanej lokalizacji w podanej chwili czasu},captionpos=b]
+CREATE OR REPLACE FUNCTION SelectAllEntitiesInLocationInTimepoint(
+		loc IN VARCHAR2,
+		timepoint IN TIMESTAMP
+) RETURN VARCHAR2 SQL_MACRO AS
+BEGIN
+	RETURN q'{
+	SELECT DISTINCT EL1.name
+		FROM entities_entered_location EL1
+		WHERE EL1.location = loc
+		AND EL1.date_time <= timepoint
+		AND (SELECT COUNT(*) FROM entities_entered_location EL2
+			WHERE EL2.location <> loc
+			AND EL2.name = EL1.name
+			AND EL2.date_time > EL1.date_time
+			AND EL2.date_time <= timepoint
+		) = 0
+	}';
+END;
+		\end{lstlisting}
+		
+	
+	\subsection{Pobranie właściciela przedmiotu w podanej chwili}
+			
+		\begin{lstlisting}[caption={Pobranie właściciela przedmiotu w podanej
+		chwili},captionpos=b]
+CREATE OR REPLACE FUNCTION SelectItemOwnerInTimepoint(
+		itemId IN INT,
+		timepoint IN TIMESTAMP
+		) RETURN VARCHAR2 SQL_MACRO AS
+BEGIN
+	RETURN q'{
+	SELECT
+			CASE WHEN TE1.from_a = 0 THEN T1.owner_a ELSE T1.owner_b END taker,
+			CASE WHEN TE1.from_a = 1 THEN T1.owner_a ELSE T1.owner_b END giver,
+			TE1.id, TE1.TRANSACTION, TE1.item, T1.stamp, TE1.from_a, T1.owner_a, T1.owner_b
+		FROM transaction_entries TE1, transactions T1
+		WHERE TE1.transaction = T1.id
+		AND TE1.item = itemId
+		AND T1.stamp <= timepoint
+		AND (SELECT COUNT(*) FROM transaction_entries TE2, transactions T2
+			WHERE TE2.transaction = T2.id
+			AND TE2.item = itemId
+			AND T2.stamp <= timepoint
+			AND T2.stamp > T1.stamp
+		) = 0}';
+END;
+		\end{lstlisting}
+		
+	
+	\subsection{Pobranie przedmiotów entity w punkcie
+		czasu}
+			
+		\begin{lstlisting}[caption={Pobranie przedmiotów entity w punkcie
+		czasu},captionpos=b]
+CREATE OR REPLACE FUNCTION SelectItemsOfPlayerInTimepointUnoptimisedVery(
+		playerName IN VARCHAR2,
+		timepoint IN TIMESTAMP
+) RETURN VARCHAR2 SQL_MACRO AS
+BEGIN
+	RETURN q'{
+	SELECT id id, id item FROM items IT
+	WHERE
+		(
+			SELECT taker
+			FROM SelectItemOwnerInTimepoint(IT.id, timepoint) 
+		) = playerName
+	}';
+END;
+		\end{lstlisting}
+		
+	
+	\subsection{Pobranie przedmiotów, które w podanym momencie znajdowały się w
+	podanej lokalizacji}
+			
+		\begin{lstlisting}[caption={Pobranie przedmiotów, które w podanym
+		momencie znajdowały się w podanej lokalizacji},captionpos=b]
+CREATE OR REPLACE FUNCTION SelectAllItemsInLocationInTimepoint(
+		location IN VARCHAR2,
+		timepoint IN TIMESTAMP
+) RETURN VARCHAR2 SQL_MACRO AS
+BEGIN
+	RETURN q'{
+	SELECT UNIQUE I1.item
+		FROM SelectAllEntitiesInLocationInTimepoint(location, timepoint) E1
+			CROSS JOIN LATERAL
+			(SELECT * FROM SelectItemsOfPlayerInTimepoint(E1.name, timepoint)) I1
+	}';
+END;
+		\end{lstlisting}
+		
+	
+	\subsection{Pobranie wszystkich przedmiotów, które chociaż przez chwilę
+	znajdowału się w podanej lokalizacji w podanym zakresie czasu}
+			
+		\begin{lstlisting}[caption={Pobranie wszystkich przedmiotów, które
+		chociaż przez chwilę znajdowału się w podanej lokalizacji w podanym
+		zakresie czasu},captionpos=b]
+CREATE OR REPLACE FUNCTION SelectAllItemsInLocationDuring(
+		loc IN VARCHAR2,
+		timeStart IN TIMESTAMP,
+		timeEnd IN TIMESTAMP
+) RETURN VARCHAR2 SQL_MACRO AS
+BEGIN
+ 	RETURN q'{
+	SELECT DISTINCT item FROM (
+		SELECT item FROM
+			(SELECT DISTINCT E1.item
+				FROM entities_entered_location EL1,
+					SelectAllItemsInLocationInTimepoint(loc, EL1.date_time) E1
+				WHERE EL1.date_time <= timeEnd
+				AND EL1.date_time >= timeStart)dbea
+			UNION ALL (SELECT DISTINCT E1.item
+				FROM transactions T1,
+					SelectAllItemsInLocationInTimepoint(loc, T1.stamp) E1
+				WHERE T1.stamp <= timeEnd
+				AND T1.stamp >= timeStart)
+			UNION ALL (SELECT item FROM
+				SelectAllItemsInLocationInTimepoint(loc, timeStart))
+			UNION ALL (SELECT item FROM
+				SelectAllItemsInLocationInTimepoint(loc, timeEnd))
+		)
+ 	}';
+END;
+		\end{lstlisting}
+		
+	
+	\subsection{}
+			
+		\begin{lstlisting}[caption={},captionpos=b]
+		\end{lstlisting}
+		
+	
+	\subsection{}
+			
+		\begin{lstlisting}[caption={},captionpos=b]
+		\end{lstlisting}
+		
+	
+	\subsection{}
+			
+		\begin{lstlisting}[caption={},captionpos=b]
+		\end{lstlisting}
+		
+	
+	\subsection{}
+			
+		\begin{lstlisting}[caption={},captionpos=b]
+		\end{lstlisting}
+		
+	
+	\subsection{}
+			
+		\begin{lstlisting}[caption={},captionpos=b]
+		\end{lstlisting}
+		
+	
+	\subsection{}
+			
+		\begin{lstlisting}[caption={},captionpos=b]
+		\end{lstlisting}
+		
+	
+	\subsection{}
+			
+		\begin{lstlisting}[caption={},captionpos=b]
+		\end{lstlisting}
+		
+	
+	\subsection{}
+			
+		\begin{lstlisting}[caption={},captionpos=b]
+		\end{lstlisting}
+		
 
 \newpage
 \printbibliography

@@ -63,7 +63,8 @@ BEGIN
 		SELECT item FROM
 			(SELECT DISTINCT E1.item
 				FROM entities_entered_location EL1 CROSS JOIN LATERAL
-					(SELECT * FROM SelectAllItemsInLocationInTimepoint(loc, EL1.date_time)) E1
+					(SELECT * FROM
+						SelectAllItemsInLocationInTimepoint(loc, EL1.date_time)) E1
 				WHERE EL1.date_time <= timeEnd
 				AND EL1.date_time >= timeStart)
 			UNION ALL (SELECT DISTINCT E1.item
